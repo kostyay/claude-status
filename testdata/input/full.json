@@ -1,0 +1,9 @@
+{
+  "model": {
+    "display_name": "Claude"
+  },
+  "workspace": {
+    "current_dir": "/Users/test/projects/myproject"
+  },
+  "version": "1.0.0"
+}

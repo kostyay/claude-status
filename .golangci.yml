@@ -1,0 +1,11 @@
+linters-settings:
+  errcheck:
+    exclude-functions:
+      - (encoding/json.Encoder).Encode
+      - (os/exec.Cmd).Run
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck

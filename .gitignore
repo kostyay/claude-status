@@ -8,6 +8,9 @@
 *.so
 *.dylib
 
+# Built binary
+/claude-status
+
 # Test binary, built with `go test -c`
 *.test
 
