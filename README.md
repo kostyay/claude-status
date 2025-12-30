@@ -250,7 +250,7 @@ Following [XDG Base Directory Specification](https://specifications.freedesktop.
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.25+
 - golangci-lint (for linting)
 
 ### Commands

@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/kostya/claude-status/internal/git"
 	"github.com/kostya/claude-status/internal/github"
 )
@@ -49,10 +51,10 @@ type CachedDiffStats struct {
 
 // CacheFile is the structure of the cache file on disk.
 type CacheFile struct {
-	GitBranch   *CachedValue       `json:"git_branch,omitempty"`
-	GitStatus   *CachedValue       `json:"git_status,omitempty"`
-	GitDiffStats *CachedDiffStats  `json:"git_diff_stats,omitempty"`
-	GitHubBuild *CachedGitHubBuild `json:"github_build,omitempty"`
+	GitBranch    *CachedValue       `json:"git_branch,omitempty"`
+	GitStatus    *CachedValue       `json:"git_status,omitempty"`
+	GitDiffStats *CachedDiffStats   `json:"git_diff_stats,omitempty"`
+	GitHubBuild  *CachedGitHubBuild `json:"github_build,omitempty"`
 }
 
 // Manager handles cache operations with file-based persistence.
@@ -61,6 +63,7 @@ type Manager struct {
 	cachePath string
 	clock     Clock
 	mu        sync.RWMutex
+	fileLock  *flock.Flock
 }
 
 // NewManager creates a new cache manager.
@@ -70,10 +73,12 @@ func NewManager(cacheDir string) *Manager {
 
 // NewManagerWithClock creates a new cache manager with a custom clock.
 func NewManagerWithClock(cacheDir string, clock Clock) *Manager {
+	cachePath := filepath.Join(cacheDir, "cache.json")
 	return &Manager{
 		cacheDir:  cacheDir,
-		cachePath: filepath.Join(cacheDir, "cache.json"),
+		cachePath: cachePath,
 		clock:     clock,
+		fileLock:  flock.New(cachePath + ".lock"),
 	}
 }
 
@@ -82,192 +87,256 @@ func (m *Manager) EnsureDir() error {
 	return os.MkdirAll(m.cacheDir, 0755)
 }
 
+// withFileLock acquires an exclusive file lock before executing fn.
+// This ensures multi-process safety when multiple instances access the same cache.
+// On lock timeout, it proceeds without locking (graceful degradation).
+func (m *Manager) withFileLock(fn func()) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	locked, err := m.fileLock.TryLockContext(ctx, 100*time.Millisecond)
+	if err != nil || !locked {
+		slog.Warn("cache lock timeout, proceeding without lock", "err", err)
+		fn()
+		return
+	}
+	defer func() {
+		_ = m.fileLock.Unlock()
+	}()
+
+	fn()
+}
+
 // GetGitBranch returns the cached git branch or fetches it if the cache is invalid.
 func (m *Manager) GetGitBranch(headPath string, fetchFn func() (string, error)) (string, error) {
-	// Get current file mtime
-	mtime, err := getFileMtime(headPath)
-	if err != nil {
-		// Can't stat file, just fetch
-		return fetchFn()
-	}
+	var result string
+	var resultErr error
 
-	// Check cache
-	m.mu.RLock()
-	cache := m.load()
-	m.mu.RUnlock()
+	m.withFileLock(func() {
+		// Get current file mtime
+		mtime, err := getFileMtime(headPath)
+		if err != nil {
+			// Can't stat file, just fetch
+			result, resultErr = fetchFn()
+			return
+		}
 
-	if cache.GitBranch != nil && cache.GitBranch.FileMtime == mtime {
-		return cache.GitBranch.Value, nil
-	}
+		// Check cache
+		m.mu.RLock()
+		cache := m.load()
+		m.mu.RUnlock()
 
-	// Cache miss - fetch and store
-	value, err := fetchFn()
-	if err != nil {
-		return "", err
-	}
+		if cache.GitBranch != nil && cache.GitBranch.FileMtime == mtime {
+			result = cache.GitBranch.Value
+			return
+		}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+		// Cache miss - fetch and store
+		value, err := fetchFn()
+		if err != nil {
+			resultErr = err
+			return
+		}
 
-	// Re-check cache after acquiring write lock (TOCTOU protection)
-	cache = m.load()
-	if cache.GitBranch != nil && cache.GitBranch.FileMtime == mtime {
-		return cache.GitBranch.Value, nil
-	}
+		m.mu.Lock()
+		defer m.mu.Unlock()
 
-	cache.GitBranch = &CachedValue{
-		Value:     value,
-		FileMtime: mtime,
-		CachedAt:  m.clock.Now(),
-	}
-	m.save(cache)
+		// Re-check cache after acquiring write lock (TOCTOU protection)
+		cache = m.load()
+		if cache.GitBranch != nil && cache.GitBranch.FileMtime == mtime {
+			result = cache.GitBranch.Value
+			return
+		}
 
-	return value, nil
+		cache.GitBranch = &CachedValue{
+			Value:     value,
+			FileMtime: mtime,
+			CachedAt:  m.clock.Now(),
+		}
+		m.save(cache)
+
+		result = value
+	})
+
+	return result, resultErr
 }
 
 // GetGitStatus returns the cached git status or fetches it if the cache is invalid.
 func (m *Manager) GetGitStatus(indexPath string, fetchFn func() (string, error)) (string, error) {
-	// Get current file mtime
-	mtime, err := getFileMtime(indexPath)
-	if err != nil {
-		// Can't stat file (maybe no commits yet), just fetch
-		return fetchFn()
-	}
+	var result string
+	var resultErr error
 
-	// Check cache
-	m.mu.RLock()
-	cache := m.load()
-	m.mu.RUnlock()
+	m.withFileLock(func() {
+		// Get current file mtime
+		mtime, err := getFileMtime(indexPath)
+		if err != nil {
+			// Can't stat file (maybe no commits yet), just fetch
+			result, resultErr = fetchFn()
+			return
+		}
 
-	if cache.GitStatus != nil && cache.GitStatus.FileMtime == mtime {
-		return cache.GitStatus.Value, nil
-	}
+		// Check cache
+		m.mu.RLock()
+		cache := m.load()
+		m.mu.RUnlock()
 
-	// Cache miss - fetch and store
-	value, err := fetchFn()
-	if err != nil {
-		return "", err
-	}
+		if cache.GitStatus != nil && cache.GitStatus.FileMtime == mtime {
+			result = cache.GitStatus.Value
+			return
+		}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+		// Cache miss - fetch and store
+		value, err := fetchFn()
+		if err != nil {
+			resultErr = err
+			return
+		}
 
-	// Re-check cache after acquiring write lock (TOCTOU protection)
-	cache = m.load()
-	if cache.GitStatus != nil && cache.GitStatus.FileMtime == mtime {
-		return cache.GitStatus.Value, nil
-	}
+		m.mu.Lock()
+		defer m.mu.Unlock()
 
-	cache.GitStatus = &CachedValue{
-		Value:     value,
-		FileMtime: mtime,
-		CachedAt:  m.clock.Now(),
-	}
-	m.save(cache)
+		// Re-check cache after acquiring write lock (TOCTOU protection)
+		cache = m.load()
+		if cache.GitStatus != nil && cache.GitStatus.FileMtime == mtime {
+			result = cache.GitStatus.Value
+			return
+		}
 
-	return value, nil
+		cache.GitStatus = &CachedValue{
+			Value:     value,
+			FileMtime: mtime,
+			CachedAt:  m.clock.Now(),
+		}
+		m.save(cache)
+
+		result = value
+	})
+
+	return result, resultErr
 }
 
 // GetGitDiffStats returns the cached git diff stats or fetches them if the cache is invalid.
 func (m *Manager) GetGitDiffStats(indexPath string, fetchFn func() (git.DiffStats, error)) (git.DiffStats, error) {
-	// Get current file mtime
-	mtime, err := getFileMtime(indexPath)
-	if err != nil {
-		// Can't stat file (maybe no commits yet), just fetch
-		return fetchFn()
-	}
+	var result git.DiffStats
+	var resultErr error
 
-	// Check cache
-	m.mu.RLock()
-	cache := m.load()
-	m.mu.RUnlock()
+	m.withFileLock(func() {
+		// Get current file mtime
+		mtime, err := getFileMtime(indexPath)
+		if err != nil {
+			// Can't stat file (maybe no commits yet), just fetch
+			result, resultErr = fetchFn()
+			return
+		}
 
-	if cache.GitDiffStats != nil && cache.GitDiffStats.FileMtime == mtime {
-		return cache.GitDiffStats.Stats, nil
-	}
+		// Check cache
+		m.mu.RLock()
+		cache := m.load()
+		m.mu.RUnlock()
 
-	// Cache miss - fetch and store
-	stats, err := fetchFn()
-	if err != nil {
-		return git.DiffStats{}, err
-	}
+		if cache.GitDiffStats != nil && cache.GitDiffStats.FileMtime == mtime {
+			result = cache.GitDiffStats.Stats
+			return
+		}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+		// Cache miss - fetch and store
+		stats, err := fetchFn()
+		if err != nil {
+			resultErr = err
+			return
+		}
 
-	// Re-check cache after acquiring write lock (TOCTOU protection)
-	cache = m.load()
-	if cache.GitDiffStats != nil && cache.GitDiffStats.FileMtime == mtime {
-		return cache.GitDiffStats.Stats, nil
-	}
+		m.mu.Lock()
+		defer m.mu.Unlock()
 
-	cache.GitDiffStats = &CachedDiffStats{
-		Stats:     stats,
-		FileMtime: mtime,
-		CachedAt:  m.clock.Now(),
-	}
-	m.save(cache)
+		// Re-check cache after acquiring write lock (TOCTOU protection)
+		cache = m.load()
+		if cache.GitDiffStats != nil && cache.GitDiffStats.FileMtime == mtime {
+			result = cache.GitDiffStats.Stats
+			return
+		}
 
-	return stats, nil
+		cache.GitDiffStats = &CachedDiffStats{
+			Stats:     stats,
+			FileMtime: mtime,
+			CachedAt:  m.clock.Now(),
+		}
+		m.save(cache)
+
+		result = stats
+	})
+
+	return result, resultErr
 }
 
 // GetGitHubBuild returns the cached GitHub build status or fetches it if invalid.
 // The cache is invalidated if either the ref mtime changes OR the TTL expires.
 func (m *Manager) GetGitHubBuild(refPath, branch string, ttl time.Duration, fetchFn func() (github.BuildStatus, error)) (github.BuildStatus, error) {
-	// Get current ref file mtime; fall back to packed-refs if branch ref file is packed.
-	mtime, err := getFileMtime(refPath)
-	if err != nil {
-		if packedMtime, packedErr := getPackedRefsMtime(refPath); packedErr == nil {
-			mtime = packedMtime
-		} else {
-			// Missing ref file entirely; use a sentinel so we still cache and rely on TTL.
-			mtime = 0
+	var result github.BuildStatus
+	var resultErr error
+
+	m.withFileLock(func() {
+		// Get current ref file mtime; fall back to packed-refs if branch ref file is packed.
+		mtime, err := getFileMtime(refPath)
+		if err != nil {
+			if packedMtime, packedErr := getPackedRefsMtime(refPath); packedErr == nil {
+				mtime = packedMtime
+			} else {
+				// Missing ref file entirely; use a sentinel so we still cache and rely on TTL.
+				mtime = 0
+			}
 		}
-	}
 
-	// Check cache
-	m.mu.RLock()
-	cache := m.load()
-	m.mu.RUnlock()
+		// Check cache
+		m.mu.RLock()
+		cache := m.load()
+		m.mu.RUnlock()
 
-	if cache.GitHubBuild != nil && cache.GitHubBuild.Branch == branch {
-		refMtimeMatches := cache.GitHubBuild.FileMtime == mtime
-		ttlValid := m.clock.Now().Sub(cache.GitHubBuild.CachedAt) < ttl
+		if cache.GitHubBuild != nil && cache.GitHubBuild.Branch == branch {
+			refMtimeMatches := cache.GitHubBuild.FileMtime == mtime
+			ttlValid := m.clock.Now().Sub(cache.GitHubBuild.CachedAt) < ttl
 
-		if refMtimeMatches && ttlValid {
-			return cache.GitHubBuild.Status, nil
+			if refMtimeMatches && ttlValid {
+				result = cache.GitHubBuild.Status
+				return
+			}
 		}
-	}
 
-	// Cache miss - fetch and store
-	status, err := fetchFn()
-	if err != nil {
-		return github.StatusError, err
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Re-check cache after acquiring write lock (TOCTOU protection)
-	cache = m.load()
-	if cache.GitHubBuild != nil && cache.GitHubBuild.Branch == branch {
-		refMtimeMatches := cache.GitHubBuild.FileMtime == mtime
-		ttlValid := m.clock.Now().Sub(cache.GitHubBuild.CachedAt) < ttl
-
-		if refMtimeMatches && ttlValid {
-			return cache.GitHubBuild.Status, nil
+		// Cache miss - fetch and store
+		status, err := fetchFn()
+		if err != nil {
+			result = github.StatusError
+			resultErr = err
+			return
 		}
-	}
 
-	cache.GitHubBuild = &CachedGitHubBuild{
-		Status:    status,
-		FileMtime: mtime,
-		CachedAt:  m.clock.Now(),
-		Branch:    branch,
-	}
-	m.save(cache)
+		m.mu.Lock()
+		defer m.mu.Unlock()
 
-	return status, nil
+		// Re-check cache after acquiring write lock (TOCTOU protection)
+		cache = m.load()
+		if cache.GitHubBuild != nil && cache.GitHubBuild.Branch == branch {
+			refMtimeMatches := cache.GitHubBuild.FileMtime == mtime
+			ttlValid := m.clock.Now().Sub(cache.GitHubBuild.CachedAt) < ttl
+
+			if refMtimeMatches && ttlValid {
+				result = cache.GitHubBuild.Status
+				return
+			}
+		}
+
+		cache.GitHubBuild = &CachedGitHubBuild{
+			Status:    status,
+			FileMtime: mtime,
+			CachedAt:  m.clock.Now(),
+			Branch:    branch,
+		}
+		m.save(cache)
+
+		result = status
+	})
+
+	return result, resultErr
 }
 
 // load reads the cache file from disk.

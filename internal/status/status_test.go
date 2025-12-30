@@ -24,13 +24,13 @@ type mockGitProvider struct {
 	gitDir       string
 }
 
-func (m *mockGitProvider) Branch() (string, error)               { return m.branch, m.branchErr }
-func (m *mockGitProvider) Status() (string, error)               { return m.status, m.statusErr }
-func (m *mockGitProvider) DiffStats() (git.DiffStats, error)     { return m.diffStats, m.diffStatsErr }
-func (m *mockGitProvider) RemoteURL() (string, error)            { return m.remoteURL, m.remoteErr }
-func (m *mockGitProvider) GitDir() string                        { return m.gitDir }
-func (m *mockGitProvider) HeadPath() string                      { return m.gitDir + "/HEAD" }
-func (m *mockGitProvider) IndexPath() string                     { return m.gitDir + "/index" }
+func (m *mockGitProvider) Branch() (string, error)           { return m.branch, m.branchErr }
+func (m *mockGitProvider) Status() (string, error)           { return m.status, m.statusErr }
+func (m *mockGitProvider) DiffStats() (git.DiffStats, error) { return m.diffStats, m.diffStatsErr }
+func (m *mockGitProvider) RemoteURL() (string, error)        { return m.remoteURL, m.remoteErr }
+func (m *mockGitProvider) GitDir() string                    { return m.gitDir }
+func (m *mockGitProvider) HeadPath() string                  { return m.gitDir + "/HEAD" }
+func (m *mockGitProvider) IndexPath() string                 { return m.gitDir + "/index" }
 func (m *mockGitProvider) RefPath(branch string) string {
 	return m.gitDir + "/refs/heads/" + branch
 }

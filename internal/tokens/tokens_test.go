@@ -8,10 +8,10 @@ import (
 
 func TestGetContextConfig(t *testing.T) {
 	tests := []struct {
-		name         string
-		modelID      string
-		wantMax      int64
-		wantUsable   int64
+		name       string
+		modelID    string
+		wantMax    int64
+		wantUsable int64
 	}{
 		{
 			name:       "Sonnet 4.5 model",

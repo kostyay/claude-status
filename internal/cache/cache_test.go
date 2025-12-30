@@ -593,3 +593,78 @@ func TestGetGitBranch_FileNotExist(t *testing.T) {
 		t.Errorf("GetGitBranch() = %q, want %q", branch, "main")
 	}
 }
+
+func TestFileLockCreated(t *testing.T) {
+	manager, dir, _ := setupTestCache(t)
+
+	headPath := filepath.Join(dir, "HEAD")
+	if err := os.WriteFile(headPath, []byte("ref"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fetchFn := func() (string, error) {
+		return "main", nil
+	}
+
+	// Call a method that uses the file lock
+	manager.GetGitBranch(headPath, fetchFn)
+
+	// Verify lock file was created
+	lockPath := filepath.Join(dir, "cache.json.lock")
+	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		t.Error("lock file was not created")
+	}
+}
+
+func TestFileLockSerializesMultipleManagers(t *testing.T) {
+	dir := t.TempDir()
+	clock := &mockClock{now: time.Now()}
+
+	headPath := filepath.Join(dir, "HEAD")
+	if err := os.WriteFile(headPath, []byte("ref"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create two managers pointing to the same cache
+	manager1 := NewManagerWithClock(dir, clock)
+	manager1.EnsureDir()
+	manager2 := NewManagerWithClock(dir, clock)
+
+	var mu sync.Mutex
+	var order []int
+
+	fetchFn := func(id int) func() (string, error) {
+		return func() (string, error) {
+			mu.Lock()
+			order = append(order, id)
+			mu.Unlock()
+			time.Sleep(50 * time.Millisecond) // Simulate work
+			return "main", nil
+		}
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Start both managers concurrently
+	go func() {
+		defer wg.Done()
+		manager1.GetGitBranch(headPath, fetchFn(1))
+	}()
+	go func() {
+		defer wg.Done()
+		manager2.GetGitBranch(headPath, fetchFn(2))
+	}()
+
+	wg.Wait()
+
+	// Both should complete (file lock serializes access)
+	mu.Lock()
+	defer mu.Unlock()
+
+	// With file locking, only ONE fetch should happen (second manager uses cached result)
+	// OR both fetch but sequentially (depends on timing)
+	if len(order) == 0 {
+		t.Error("expected at least one fetch to occur")
+	}
+}

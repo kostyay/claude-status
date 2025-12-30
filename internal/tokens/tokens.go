@@ -41,9 +41,9 @@ func GetContextConfig(modelID string) ContextConfig {
 
 // transcriptLine represents a single line in the JSONL transcript.
 type transcriptLine struct {
-	Type       string  `json:"type"`
-	IsSidechain bool   `json:"isSidechain"`
-	Message    *message `json:"message"`
+	Type        string   `json:"type"`
+	IsSidechain bool     `json:"isSidechain"`
+	Message     *message `json:"message"`
 }
 
 // message represents the message field in a transcript line.

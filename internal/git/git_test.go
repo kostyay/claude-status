@@ -444,11 +444,11 @@ func TestParseShortstat(t *testing.T) {
 
 func TestParseStatusForTypes(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		wantNew  int
-		wantMod  int
-		wantDel  int
+		name    string
+		input   string
+		wantNew int
+		wantMod int
+		wantDel int
 	}{
 		{
 			name:    "empty",
