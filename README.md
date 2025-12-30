@@ -2,7 +2,7 @@
 
 A fast, lightweight status line for [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) written in Go.
 
-![Example status line](https://img.shields.io/badge/Claude-Sonnet_4-cyan) ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go) ![License](https://img.shields.io/badge/License-MIT-green)
+![Example status line](https://img.shields.io/badge/Claude-Sonnet_4-cyan) ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go) ![License](https://img.shields.io/badge/License-MIT-green)
 
 ```
 [Sonnet 4] | 📁 my-project | 🌿 main ±3 | ✅
