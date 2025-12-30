@@ -1,0 +1,290 @@
+package template
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestNewEngine_ValidTemplate(t *testing.T) {
+	tmpl := `{{.Model}}`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	if engine == nil {
+		t.Fatal("NewEngine() returned nil engine")
+	}
+}
+
+func TestNewEngine_InvalidTemplate(t *testing.T) {
+	tmpl := `{{.Model` // Missing closing braces
+	_, err := NewEngine(tmpl)
+	if err == nil {
+		t.Fatal("NewEngine() expected error for invalid template")
+	}
+}
+
+func TestRender_AllFields(t *testing.T) {
+	tmpl := `[{{.Model}}] {{.Dir}} {{.GitBranch}} {{.GitStatus}} {{.GitHubStatus}} v{{.Version}}`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	data := StatusData{
+		Model:        "Claude",
+		Dir:          "myproject",
+		GitBranch:    "main",
+		GitStatus:    "±3",
+		GitHubStatus: "✅",
+		Version:      "1.0.0",
+	}
+
+	result, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	expected := "[Claude] myproject main ±3 ✅ v1.0.0"
+	if result != expected {
+		t.Errorf("Render() = %q, want %q", result, expected)
+	}
+}
+
+func TestRender_EmptyOptionals(t *testing.T) {
+	tmpl := `[{{.Model}}]{{if .GitBranch}} | {{.GitBranch}}{{end}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	data := StatusData{
+		Model: "Claude",
+		// All optional fields empty
+	}
+
+	result, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	expected := "[Claude]"
+	if result != expected {
+		t.Errorf("Render() = %q, want %q", result, expected)
+	}
+}
+
+func TestRender_ColorFunctions(t *testing.T) {
+	tmpl := `{{cyan}}test{{reset}}`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	result, err := engine.Render(StatusData{})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	if !strings.Contains(result, "\033[36m") {
+		t.Error("Render() missing cyan color code")
+	}
+	if !strings.Contains(result, "\033[0m") {
+		t.Error("Render() missing reset color code")
+	}
+	if !strings.Contains(result, "test") {
+		t.Error("Render() missing content")
+	}
+}
+
+func TestRender_CustomTemplate(t *testing.T) {
+	// A completely custom template
+	tmpl := `Model: {{.Model}} | Branch: {{.GitBranch}}`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	data := StatusData{
+		Model:     "Claude",
+		GitBranch: "feature",
+	}
+
+	result, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	expected := "Model: Claude | Branch: feature"
+	if result != expected {
+		t.Errorf("Render() = %q, want %q", result, expected)
+	}
+}
+
+func TestRender_EscapedBraces(t *testing.T) {
+	// Test that we can include literal text
+	tmpl := `{{.Model}} - literal text`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	data := StatusData{Model: "Claude"}
+	result, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	expected := "Claude - literal text"
+	if result != expected {
+		t.Errorf("Render() = %q, want %q", result, expected)
+	}
+}
+
+func TestColorFunctions(t *testing.T) {
+	tests := []struct {
+		name     string
+		funcName string
+		want     string
+	}{
+		{"cyan", "cyan", "\033[36m"},
+		{"blue", "blue", "\033[34m"},
+		{"green", "green", "\033[32m"},
+		{"yellow", "yellow", "\033[33m"},
+		{"red", "red", "\033[31m"},
+		{"gray", "gray", "\033[90m"},
+		{"reset", "reset", "\033[0m"},
+		{"bold", "bold", "\033[1m"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpl := `{{` + tt.funcName + `}}`
+			engine, err := NewEngine(tmpl)
+			if err != nil {
+				t.Fatalf("NewEngine() error = %v", err)
+			}
+
+			result, err := engine.Render(StatusData{})
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+
+			if result != tt.want {
+				t.Errorf("%s() = %q, want %q", tt.funcName, result, tt.want)
+			}
+		})
+	}
+}
+
+func TestRender_ComplexTemplate(t *testing.T) {
+	// Test the default template style
+	tmpl := `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}`
+
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	data := StatusData{
+		Model:        "Claude",
+		Dir:          "myproject",
+		GitBranch:    "main",
+		GitStatus:    "±3",
+		GitHubStatus: "✅",
+		Version:      "1.0.0",
+	}
+
+	result, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	// Check key parts are present
+	if !strings.Contains(result, "[Claude]") {
+		t.Error("Missing model name")
+	}
+	if !strings.Contains(result, "📁 myproject") {
+		t.Error("Missing directory")
+	}
+	if !strings.Contains(result, "🌿 main") {
+		t.Error("Missing git branch")
+	}
+	if !strings.Contains(result, "±3") {
+		t.Error("Missing git status")
+	}
+	if !strings.Contains(result, "✅") {
+		t.Error("Missing GitHub status")
+	}
+	if !strings.Contains(result, "v1.0.0") {
+		t.Error("Missing version")
+	}
+}
+
+func TestCtxColorFunction(t *testing.T) {
+	tests := []struct {
+		name       string
+		percentage float64
+		wantColor  string
+	}{
+		{"0% - green", 0, "\033[32m"},
+		{"25% - green", 25, "\033[32m"},
+		{"49.9% - green", 49.9, "\033[32m"},
+		{"50% - yellow", 50, "\033[33m"},
+		{"65% - yellow", 65, "\033[33m"},
+		{"79.9% - yellow", 79.9, "\033[33m"},
+		{"80% - red", 80, "\033[31m"},
+		{"90% - red", 90, "\033[31m"},
+		{"100% - red", 100, "\033[31m"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpl := `{{ctxColor .ContextPctRaw}}`
+			engine, err := NewEngine(tmpl)
+			if err != nil {
+				t.Fatalf("NewEngine() error = %v", err)
+			}
+
+			data := StatusData{ContextPctRaw: tt.percentage}
+			result, err := engine.Render(data)
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+
+			if result != tt.wantColor {
+				t.Errorf("ctxColor(%v) = %q, want %q", tt.percentage, result, tt.wantColor)
+			}
+		})
+	}
+}
+
+func TestRender_ContextPercentageWithColor(t *testing.T) {
+	// Test a template using ctxColor with context percentage
+	tmpl := `{{ctxColor .ContextPctRaw}}📊 {{.ContextPct}}{{reset}}`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	data := StatusData{
+		ContextPct:    "75.0%",
+		ContextPctRaw: 75.0,
+	}
+
+	result, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	// Should have yellow color (50-80%)
+	if !strings.Contains(result, "\033[33m") {
+		t.Error("Missing yellow color code for 75%")
+	}
+	if !strings.Contains(result, "📊 75.0%") {
+		t.Error("Missing context percentage")
+	}
+	if !strings.Contains(result, "\033[0m") {
+		t.Error("Missing reset code")
+	}
+}

@@ -1,0 +1,7 @@
+{
+  "template": "{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}",
+  "github_workflow": "build_and_test",
+  "github_ttl": 60,
+  "logging_enabled": false,
+  "log_path": ""
+}

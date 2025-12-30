@@ -1,0 +1,13 @@
+{
+  "total_count": 1,
+  "workflow_runs": [
+    {
+      "id": 987654323,
+      "status": "in_progress",
+      "conclusion": null,
+      "head_branch": "main",
+      "created_at": "2024-01-15T10:00:00Z",
+      "updated_at": "2024-01-15T10:02:00Z"
+    }
+  ]
+}
