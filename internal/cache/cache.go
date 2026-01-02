@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/kostya/claude-status/internal/git"
-	"github.com/kostya/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/git"
+	"github.com/kostyay/claude-status/internal/github"
 )
 
 // Clock is an interface for time operations, allowing for testing.

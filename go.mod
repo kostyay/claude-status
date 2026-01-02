@@ -1,4 +1,4 @@
-module github.com/kostya/claude-status
+module github.com/kostyay/claude-status
 
 go 1.25.0
 

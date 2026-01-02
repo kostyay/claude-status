@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kostya/claude-status/internal/config"
-	"github.com/kostya/claude-status/internal/git"
-	"github.com/kostya/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/config"
+	"github.com/kostyay/claude-status/internal/git"
+	"github.com/kostyay/claude-status/internal/github"
 )
 
 // mockGitProvider is a test double for GitProvider.

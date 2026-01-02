@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kostya/claude-status/internal/cache"
-	"github.com/kostya/claude-status/internal/config"
-	"github.com/kostya/claude-status/internal/github"
-	"github.com/kostya/claude-status/internal/status"
-	"github.com/kostya/claude-status/internal/template"
+	"github.com/kostyay/claude-status/internal/cache"
+	"github.com/kostyay/claude-status/internal/config"
+	"github.com/kostyay/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/status"
+	"github.com/kostyay/claude-status/internal/template"
 )
 
 func TestE2E_FullFlow(t *testing.T) {

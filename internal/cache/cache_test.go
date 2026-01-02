@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kostya/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/github"
 )
 
 // mockClock is a test double for Clock.

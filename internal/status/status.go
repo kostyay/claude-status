@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kostya/claude-status/internal/cache"
-	"github.com/kostya/claude-status/internal/config"
-	"github.com/kostya/claude-status/internal/git"
-	"github.com/kostya/claude-status/internal/github"
-	"github.com/kostya/claude-status/internal/template"
-	"github.com/kostya/claude-status/internal/tokens"
+	"github.com/kostyay/claude-status/internal/cache"
+	"github.com/kostyay/claude-status/internal/config"
+	"github.com/kostyay/claude-status/internal/git"
+	"github.com/kostyay/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/template"
+	"github.com/kostyay/claude-status/internal/tokens"
 )
 
 // Input represents the JSON input from stdin.
