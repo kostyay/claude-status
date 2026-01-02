@@ -26,13 +26,13 @@ A fast, lightweight status line for [Claude Code CLI](https://docs.anthropic.com
 ### From Source
 
 ```bash
-go install github.com/kostya/claude-status/cmd/claude-status@latest
+go install github.com/kostyay/claude-status/cmd/claude-status@latest
 ```
 
 ### Manual Build
 
 ```bash
-git clone https://github.com/kostya/claude-status.git
+git clone https://github.com/kostyay/claude-status.git
 cd claude-status
 make build
 # Binary is at ./claude-status
