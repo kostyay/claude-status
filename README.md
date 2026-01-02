@@ -82,7 +82,7 @@ CLAUDE_CONFIG_DIR=/custom/path ./claude-status -install
 | **Git Branch** | Current branch name | `🌿 main` |
 | **Git Status** | Uncommitted changes count | `±3` |
 | **GitHub CI** | Latest workflow run status | `✅` `❌` `🔄` |
-| **Context %** | Context window usage (color-coded) | `📊 45.2%` |
+| **Context %** | Usable context usage before auto-compact (color-coded) | `📊 56.5%` |
 | **Version** | Claude Code version | `v1.0.0` |
 
 ### Token Metrics (Available in Templates)
@@ -94,8 +94,8 @@ CLAUDE_CONFIG_DIR=/custom/path ./claude-status -install
 | **Tokens Cached** | Cached tokens (read + creation) | `35k` |
 | **Tokens Total** | Sum of all tokens | `50.7k` |
 | **Context Length** | Current context window size | `45.2k` |
-| **Context %** | Percentage of max context used | `45.2%` |
-| **Context % (Usable)** | Percentage of usable context (80% before auto-compact) | `56.5%` |
+| **Context % (Usable)** | Percentage of usable context (80% before auto-compact) - **default** | `56.5%` |
+| **Context %** | Percentage of max context used (for custom templates) | `45.2%` |
 
 ### GitHub CI Status Icons
 
@@ -132,10 +132,10 @@ Create `~/.config/claude-status/config.json`:
 ### Default Template
 
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPct}} | {{ctxColor .ContextPctRaw}}📊 {{.ContextPct}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}
 ```
 
-The default template now includes context percentage with color-coded display (green/yellow/red based on usage).
+The default template shows usable context percentage (before auto-compact at 80%) with color-coded display (green/yellow/red based on usage). This matches Claude Code's "Context left until auto-compact" metric.
 
 ## Template Reference
 
@@ -154,15 +154,15 @@ The default template now includes context percentage with color-coded display (g
 | `.TokensCached` | string | Cached tokens (formatted) |
 | `.TokensTotal` | string | Total tokens (formatted) |
 | `.ContextLength` | string | Context length (formatted) |
-| `.ContextPct` | string | Context percentage (e.g., "45.2%") |
-| `.ContextPctUse` | string | Usable context percentage (e.g., "56.5%") |
+| `.ContextPctUse` | string | Usable context percentage - **used in default template** |
+| `.ContextPct` | string | Context percentage of max tokens (for custom templates) |
 | `.TokensInputRaw` | int64 | Raw input tokens (for conditionals) |
 | `.TokensOutputRaw` | int64 | Raw output tokens |
 | `.TokensCachedRaw` | int64 | Raw cached tokens |
 | `.TokensTotalRaw` | int64 | Raw total tokens |
 | `.ContextLengthRaw` | int64 | Raw context length |
-| `.ContextPctRaw` | float64 | Raw context percentage (for `ctxColor`) |
-| `.ContextPctUseRaw` | float64 | Raw usable context percentage |
+| `.ContextPctUseRaw` | float64 | Raw usable context percentage (for `ctxColor`) - **used in default template** |
+| `.ContextPctRaw` | float64 | Raw context percentage of max tokens |
 
 ### Color Functions
 
@@ -176,7 +176,7 @@ The default template now includes context percentage with color-coded display (g
 | `{{gray}}` | Gray color |
 | `{{bold}}` | Bold text |
 | `{{reset}}` | Reset formatting |
-| `{{ctxColor .ContextPctRaw}}` | Dynamic color based on context usage: green (<50%), yellow (50-80%), red (>80%) |
+| `{{ctxColor .ContextPctUseRaw}}` | Dynamic color based on usable context: green (<50%), yellow (50-80%), red (>80%) |
 
 ### Example Templates
 
@@ -197,7 +197,7 @@ The default template now includes context percentage with color-coded display (g
 
 **With full token metrics:**
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{.TokensInput}} Out:{{.TokensOutput}} Cache:{{.TokensCached}}{{reset}}{{end}}{{if .ContextPct}} | {{ctxColor .ContextPctRaw}}📊 {{.ContextPct}}{{reset}}{{end}}
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{.TokensInput}} Out:{{.TokensOutput}} Cache:{{.TokensCached}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}
 ```
 
 **Context-focused (shows usable context percentage):**
