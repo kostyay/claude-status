@@ -9,7 +9,8 @@ import (
 // DefaultTemplate is the default Go template for the status line.
 // It replicates the Python version's output with emojis and adds git changes.
 // Uses ContextPctUse (usable context before auto-compact) to match Claude's display.
-const DefaultTemplate = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditionsRaw .GitDeletionsRaw}} {{green}}{{.GitAdditions}}{{reset}},{{red}}{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFilesRaw .GitModifiedFilesRaw .GitDeletedFilesRaw}} {{.GitNewFiles}}{{.GitModifiedFiles}}{{.GitDeletedFiles}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}{{if .HasBeads}} | {{yellow}}📋 {{.BeadsReady}}{{reset}}{{if .BeadsBlocked}} {{red}}{{.BeadsBlocked}}{{reset}}{{end}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}`
+const DefaultTemplate = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditionsRaw .GitDeletionsRaw}} {{green}}{{.GitAdditions}}{{reset}},{{red}}{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFilesRaw .GitModifiedFilesRaw .GitDeletedFilesRaw}} {{.GitNewFiles}}{{.GitModifiedFiles}}{{.GitDeletedFiles}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .HasBeads}}
+{{yellow}}📋 {{.BeadsReady}}{{reset}}{{if .BeadsBlocked}} {{red}}{{.BeadsBlocked}}{{reset}}{{end}}{{end}}`
 
 // TemplateWithTokens is an example template that shows all token metrics.
 // Usage: set "template" in config.json to this value.
