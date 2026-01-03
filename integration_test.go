@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kostyay/claude-status/internal/beads"
 	"github.com/kostyay/claude-status/internal/cache"
 	"github.com/kostyay/claude-status/internal/config"
 	"github.com/kostyay/claude-status/internal/github"
@@ -449,5 +450,256 @@ func TestE2E_GitHubStatus_Success(t *testing.T) {
 	emoji := github.StatusToEmoji(status)
 	if emoji != "✅" {
 		t.Errorf("emoji = %q, want ✅", emoji)
+	}
+}
+
+// mockBeadsCommander is a mock commander for beads testing.
+type mockBeadsCommander struct {
+	output string
+}
+
+func (m *mockBeadsCommander) Output(name string, args ...string) ([]byte, error) {
+	return []byte(m.output), nil
+}
+
+func TestE2E_BeadsWidget(t *testing.T) {
+	// Test that beads stats are properly rendered in the template
+	cfg := config.Config{
+		Template: config.TemplateWithBeads,
+		BeadsTTL: 5,
+	}
+
+	engine, err := template.NewEngine(cfg.Template)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	data := template.StatusData{
+		Model:              "Claude",
+		Dir:                "myproject",
+		GitBranch:          "main",
+		HasBeads:           true,
+		BeadsReady:         "3 ready",
+		BeadsBlocked:       "1 blocked",
+		BeadsReadyRaw:      3,
+		BeadsBlockedRaw:    1,
+		ContextPctUse:      "45.2%",
+		ContextPctUseRaw:   45.2,
+	}
+
+	output, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	// Check that output contains beads info
+	if !strings.Contains(output, "3 ready") {
+		t.Error("Output missing beads ready count")
+	}
+	if !strings.Contains(output, "1 blocked") {
+		t.Error("Output missing beads blocked count")
+	}
+	if !strings.Contains(output, "📋") {
+		t.Error("Output missing beads emoji")
+	}
+}
+
+func TestE2E_BeadsClient(t *testing.T) {
+	// Test beads client with mock commander
+	mockOutput := `{
+		"summary": {
+			"total_issues": 10,
+			"open_issues": 5,
+			"in_progress_issues": 2,
+			"closed_issues": 3,
+			"blocked_issues": 1,
+			"ready_issues": 4
+		}
+	}`
+
+	cmd := &mockBeadsCommander{output: mockOutput}
+	client := beads.NewClientWithCommander(cmd, "/test")
+
+	stats, err := client.GetStats()
+	if err != nil {
+		t.Fatalf("GetStats() error = %v", err)
+	}
+
+	if stats.TotalIssues != 10 {
+		t.Errorf("TotalIssues = %d, want 10", stats.TotalIssues)
+	}
+	if stats.OpenIssues != 5 {
+		t.Errorf("OpenIssues = %d, want 5", stats.OpenIssues)
+	}
+	if stats.ReadyIssues != 4 {
+		t.Errorf("ReadyIssues = %d, want 4", stats.ReadyIssues)
+	}
+	if stats.BlockedIssues != 1 {
+		t.Errorf("BlockedIssues = %d, want 1", stats.BlockedIssues)
+	}
+}
+
+func TestE2E_BeadsCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheManager := cache.NewManager(tmpDir)
+	cacheManager.EnsureDir()
+
+	fetchCalls := 0
+	fetchFn := func() (beads.Stats, error) {
+		fetchCalls++
+		return beads.Stats{
+			TotalIssues: 5,
+			OpenIssues:  3,
+			ReadyIssues: 2,
+		}, nil
+	}
+
+	// First call should fetch
+	stats1, err := cacheManager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
+	if err != nil {
+		t.Fatalf("GetBeadsStats() error = %v", err)
+	}
+	if stats1.TotalIssues != 5 {
+		t.Errorf("TotalIssues = %d, want 5", stats1.TotalIssues)
+	}
+	if fetchCalls != 1 {
+		t.Errorf("fetchCalls = %d, want 1", fetchCalls)
+	}
+
+	// Second call should use cache
+	stats2, err := cacheManager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
+	if err != nil {
+		t.Fatalf("GetBeadsStats() error = %v", err)
+	}
+	if stats2.TotalIssues != 5 {
+		t.Errorf("TotalIssues = %d, want 5", stats2.TotalIssues)
+	}
+	if fetchCalls != 1 {
+		t.Errorf("fetchCalls = %d, want 1 (should use cache)", fetchCalls)
+	}
+}
+
+// skipIfBdNotAvailable skips the test if the bd CLI is not installed.
+func skipIfBdNotAvailable(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd CLI not available - skipping real beads integration test")
+	}
+}
+
+// initTestGitRepo initializes a git repository in the given directory.
+func initTestGitRepo(t *testing.T, dir string) {
+	t.Helper()
+
+	cmds := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("failed to run %v: %v", args, err)
+		}
+	}
+
+	// Create and commit initial file
+	if err := os.WriteFile(filepath.Join(dir, "test.txt"), []byte("test"), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	cmd := exec.Command("git", "add", ".")
+	cmd.Dir = dir
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "initial")
+	cmd.Dir = dir
+	cmd.Run()
+}
+
+// initTestBeads initializes beads in the given directory.
+func initTestBeads(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("bd", "init", "--prefix", "test", "--skip-hooks", "--sandbox", "--quiet")
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bd init failed: %v\nOutput: %s", err, output)
+	}
+}
+
+// createTestBeadsTasks creates test tasks in the beads database.
+func createTestBeadsTasks(t *testing.T, dir string) {
+	t.Helper()
+
+	// Create first task
+	cmd := exec.Command("bd", "create", "--title", "Test task 1", "--type", "task", "--sandbox", "--silent")
+	cmd.Dir = dir
+	task1Output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("bd create task 1 failed: %v", err)
+	}
+	task1ID := strings.TrimSpace(string(task1Output))
+
+	// Create second task
+	cmd = exec.Command("bd", "create", "--title", "Test task 2", "--type", "task", "--sandbox", "--silent")
+	cmd.Dir = dir
+	if _, err := cmd.Output(); err != nil {
+		t.Fatalf("bd create task 2 failed: %v", err)
+	}
+
+	// Create third task that will be blocked by task1
+	cmd = exec.Command("bd", "create", "--title", "Blocked task", "--type", "task", "--sandbox", "--silent")
+	cmd.Dir = dir
+	task3Output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("bd create task 3 failed: %v", err)
+	}
+	task3ID := strings.TrimSpace(string(task3Output))
+
+	// Add dependency: task3 depends on task1 (task3 is blocked by task1)
+	cmd = exec.Command("bd", "dep", "add", task3ID, task1ID, "--sandbox")
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bd dep add failed: %v\nOutput: %s", err, output)
+	}
+}
+
+func TestE2E_BeadsRealCLI(t *testing.T) {
+	skipIfBdNotAvailable(t)
+
+	tmpDir := t.TempDir()
+
+	// Initialize git repo (required by bd)
+	initTestGitRepo(t, tmpDir)
+
+	// Initialize beads
+	initTestBeads(t, tmpDir)
+
+	// Create test tasks
+	createTestBeadsTasks(t, tmpDir)
+
+	// Create beads client and verify it works
+	client := beads.NewClient(tmpDir)
+
+	if !client.HasBeads() {
+		t.Fatal("HasBeads() = false, want true")
+	}
+
+	stats, err := client.GetStats()
+	if err != nil {
+		t.Fatalf("GetStats() error = %v", err)
+	}
+
+	// Verify counts match what we created
+	if stats.TotalIssues != 3 {
+		t.Errorf("TotalIssues = %d, want 3", stats.TotalIssues)
+	}
+	if stats.OpenIssues != 3 {
+		t.Errorf("OpenIssues = %d, want 3", stats.OpenIssues)
+	}
+	if stats.BlockedIssues != 1 {
+		t.Errorf("BlockedIssues = %d, want 1", stats.BlockedIssues)
+	}
+	if stats.ReadyIssues != 2 {
+		t.Errorf("ReadyIssues = %d, want 2", stats.ReadyIssues)
 	}
 }

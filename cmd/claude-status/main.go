@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,9 +15,16 @@ import (
 	"github.com/kostyay/claude-status/internal/template"
 )
 
+var prefixFlag = flag.String("prefix", "", "Prefix to display at the start of the status line")
+var prefixColorFlag = flag.String("prefix-color", "", "Color for the prefix (cyan, blue, green, yellow, red, magenta, gray)")
+
+var installFlag = flag.Bool("install", false, "Run installation wizard")
+
 func main() {
-	// Handle -install flag before anything else
-	if len(os.Args) > 1 && os.Args[1] == "-install" {
+	flag.Parse()
+
+	// Handle -install flag
+	if *installFlag {
 		if err := install.Run(os.Stdout, os.Stdin); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -54,6 +62,23 @@ func run() error {
 	builder, err := status.NewBuilder(&cfg, input.Workspace.CurrentDir)
 	if err != nil {
 		return fmt.Errorf("failed to create builder: %w", err)
+	}
+
+	// Set prefix if provided
+	if *prefixFlag != "" {
+		builder.SetPrefix(*prefixFlag)
+
+		// Set prefix color (default to cyan if not specified)
+		colorName := *prefixColorFlag
+		if colorName == "" {
+			colorName = "cyan"
+		}
+		if colorCode, ok := template.ColorMap[colorName]; ok {
+			builder.SetPrefixColor(colorCode)
+		} else {
+			slog.Warn("unknown prefix color, using cyan", "color", colorName)
+			builder.SetPrefixColor(template.ColorMap["cyan"])
+		}
 	}
 
 	data := builder.Build(input)
