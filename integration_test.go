@@ -555,7 +555,7 @@ func TestE2E_BeadsCache(t *testing.T) {
 	}
 
 	// First call should fetch
-	stats1, err := cacheManager.GetBeadsStats(60*time.Second, fetchFn)
+	stats1, err := cacheManager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
 	if err != nil {
 		t.Fatalf("GetBeadsStats() error = %v", err)
 	}
@@ -567,7 +567,7 @@ func TestE2E_BeadsCache(t *testing.T) {
 	}
 
 	// Second call should use cache
-	stats2, err := cacheManager.GetBeadsStats(60*time.Second, fetchFn)
+	stats2, err := cacheManager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
 	if err != nil {
 		t.Fatalf("GetBeadsStats() error = %v", err)
 	}

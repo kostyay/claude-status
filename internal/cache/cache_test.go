@@ -685,7 +685,7 @@ func TestGetBeadsStats_CacheMiss(t *testing.T) {
 		}, nil
 	}
 
-	stats, err := manager.GetBeadsStats(60*time.Second, fetchFn)
+	stats, err := manager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
 	if err != nil {
 		t.Fatalf("GetBeadsStats() error = %v", err)
 	}
@@ -713,10 +713,10 @@ func TestGetBeadsStats_CacheHit(t *testing.T) {
 	}
 
 	// First call populates cache
-	manager.GetBeadsStats(60*time.Second, fetchFn)
+	manager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
 
 	// Second call should hit cache
-	stats, err := manager.GetBeadsStats(60*time.Second, fetchFn)
+	stats, err := manager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
 	if err != nil {
 		t.Fatalf("GetBeadsStats() error = %v", err)
 	}
@@ -741,13 +741,13 @@ func TestGetBeadsStats_TTLExpired(t *testing.T) {
 	}
 
 	// First fetch
-	manager.GetBeadsStats(60*time.Second, fetchFn)
+	manager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
 
 	// Advance time past TTL
 	clock.Advance(61 * time.Second)
 
 	// Second fetch should invalidate due to TTL
-	stats, err := manager.GetBeadsStats(60*time.Second, fetchFn)
+	stats, err := manager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
 	if err != nil {
 		t.Fatalf("GetBeadsStats() error = %v", err)
 	}

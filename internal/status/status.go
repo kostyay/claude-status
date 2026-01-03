@@ -58,7 +58,7 @@ type CacheProvider interface {
 	GetGitStatus(indexPath string, fetchFn func() (string, error)) (string, error)
 	GetGitDiffStats(indexPath string, fetchFn func() (git.DiffStats, error)) (git.DiffStats, error)
 	GetGitHubBuild(refPath, branch string, ttl time.Duration, fetchFn func() (github.BuildStatus, error)) (github.BuildStatus, error)
-	GetBeadsStats(ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error)
+	GetBeadsStats(workDir string, ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error)
 	EnsureDir() error
 }
 
@@ -71,11 +71,12 @@ type BeadsProvider interface {
 
 // Builder constructs StatusData from various sources.
 type Builder struct {
-	config *config.Config
-	cache  CacheProvider
-	git    GitProvider
-	gh     GitHubProvider
-	beads  BeadsProvider
+	config  *config.Config
+	cache   CacheProvider
+	git     GitProvider
+	gh      GitHubProvider
+	beads   BeadsProvider
+	workDir string
 }
 
 // ErrNilConfig is returned when a nil config is provided to NewBuilder.
@@ -94,8 +95,9 @@ func NewBuilder(cfg *config.Config, workDir string) (*Builder, error) {
 	}
 
 	b := &Builder{
-		config: cfg,
-		cache:  cacheManager,
+		config:  cfg,
+		cache:   cacheManager,
+		workDir: workDir,
 	}
 
 	// Try to initialize git client (may fail if not in git repo)
@@ -290,7 +292,7 @@ func (b *Builder) fetchBeadsStats(data *template.StatusData) {
 	}
 
 	ttl := time.Duration(b.config.BeadsTTL) * time.Second
-	stats, err := b.cache.GetBeadsStats(ttl, b.beads.GetStats)
+	stats, err := b.cache.GetBeadsStats(b.workDir, ttl, b.beads.GetStats)
 	if err != nil {
 		slog.Debug("failed to get beads stats", "err", err)
 		return

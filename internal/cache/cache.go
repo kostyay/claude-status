@@ -58,11 +58,12 @@ type CachedBeadsStats struct {
 
 // CacheFile is the structure of the cache file on disk.
 type CacheFile struct {
-	GitBranch    *CachedValue       `json:"git_branch,omitempty"`
-	GitStatus    *CachedValue       `json:"git_status,omitempty"`
-	GitDiffStats *CachedDiffStats   `json:"git_diff_stats,omitempty"`
-	GitHubBuild  *CachedGitHubBuild `json:"github_build,omitempty"`
-	BeadsStats   *CachedBeadsStats  `json:"beads_stats,omitempty"`
+	GitBranch     *CachedValue                  `json:"git_branch,omitempty"`
+	GitStatus     *CachedValue                  `json:"git_status,omitempty"`
+	GitDiffStats  *CachedDiffStats              `json:"git_diff_stats,omitempty"`
+	GitHubBuild   *CachedGitHubBuild            `json:"github_build,omitempty"`
+	BeadsStats    *CachedBeadsStats             `json:"beads_stats,omitempty"`    // deprecated, kept for migration
+	BeadsStatsMap map[string]*CachedBeadsStats  `json:"beads_stats_map,omitempty"` // keyed by workDir
 }
 
 // Manager handles cache operations with file-based persistence.
@@ -348,8 +349,8 @@ func (m *Manager) GetGitHubBuild(refPath, branch string, ttl time.Duration, fetc
 }
 
 // GetBeadsStats returns cached beads stats or fetches them if the cache is invalid.
-// The cache is invalidated when the TTL expires.
-func (m *Manager) GetBeadsStats(ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error) {
+// The cache is invalidated when the TTL expires. Stats are cached per workDir.
+func (m *Manager) GetBeadsStats(workDir string, ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error) {
 	var result beads.Stats
 	var resultErr error
 
@@ -359,11 +360,13 @@ func (m *Manager) GetBeadsStats(ttl time.Duration, fetchFn func() (beads.Stats, 
 		cache := m.load()
 		m.mu.RUnlock()
 
-		if cache.BeadsStats != nil {
-			ttlValid := m.clock.Now().Sub(cache.BeadsStats.CachedAt) < ttl
-			if ttlValid {
-				result = cache.BeadsStats.Stats
-				return
+		if cache.BeadsStatsMap != nil {
+			if cached, ok := cache.BeadsStatsMap[workDir]; ok {
+				ttlValid := m.clock.Now().Sub(cached.CachedAt) < ttl
+				if ttlValid {
+					result = cached.Stats
+					return
+				}
 			}
 		}
 
@@ -379,15 +382,20 @@ func (m *Manager) GetBeadsStats(ttl time.Duration, fetchFn func() (beads.Stats, 
 
 		// Re-check cache after acquiring write lock (TOCTOU protection)
 		cache = m.load()
-		if cache.BeadsStats != nil {
-			ttlValid := m.clock.Now().Sub(cache.BeadsStats.CachedAt) < ttl
-			if ttlValid {
-				result = cache.BeadsStats.Stats
-				return
+		if cache.BeadsStatsMap != nil {
+			if cached, ok := cache.BeadsStatsMap[workDir]; ok {
+				ttlValid := m.clock.Now().Sub(cached.CachedAt) < ttl
+				if ttlValid {
+					result = cached.Stats
+					return
+				}
 			}
 		}
 
-		cache.BeadsStats = &CachedBeadsStats{
+		if cache.BeadsStatsMap == nil {
+			cache.BeadsStatsMap = make(map[string]*CachedBeadsStats)
+		}
+		cache.BeadsStatsMap[workDir] = &CachedBeadsStats{
 			Stats:    stats,
 			CachedAt: m.clock.Now(),
 		}

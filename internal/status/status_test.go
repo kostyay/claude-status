@@ -91,7 +91,7 @@ func (m *mockCacheProvider) GetGitHubBuild(refPath, branch string, ttl time.Dura
 	return m.buildStatus, m.buildErr
 }
 
-func (m *mockCacheProvider) GetBeadsStats(ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error) {
+func (m *mockCacheProvider) GetBeadsStats(workDir string, ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error) {
 	if m.fetchBeads {
 		return fetchFn()
 	}
