@@ -47,7 +47,7 @@ func Default() Config {
 		Template:       DefaultTemplate,
 		GitHubWorkflow: "build_and_test",
 		GitHubTTL:      60,
-		BeadsTTL:       60,
+		BeadsTTL:       5,
 		LoggingEnabled: false,
 		LogPath:        "",
 	}

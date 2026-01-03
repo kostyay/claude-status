@@ -466,7 +466,7 @@ func TestE2E_BeadsWidget(t *testing.T) {
 	// Test that beads stats are properly rendered in the template
 	cfg := config.Config{
 		Template: config.TemplateWithBeads,
-		BeadsTTL: 60,
+		BeadsTTL: 5,
 	}
 
 	engine, err := template.NewEngine(cfg.Template)
