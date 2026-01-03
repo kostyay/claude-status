@@ -698,7 +698,6 @@ func TestSetPrefix_Empty(t *testing.T) {
 	}
 }
 
-
 func TestBuild_BeadsZeroValues(t *testing.T) {
 	cfg := config.Default()
 

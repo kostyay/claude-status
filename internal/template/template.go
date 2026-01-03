@@ -31,8 +31,8 @@ var ColorMap = map[string]string{
 
 // StatusData holds all the data available for template rendering.
 type StatusData struct {
-	Prefix      string // User-provided prefix text
-	PrefixColor string // ANSI color code for prefix (from --prefix-color flag)
+	Prefix       string // User-provided prefix text
+	PrefixColor  string // ANSI color code for prefix (from --prefix-color flag)
 	Model        string // Model display name (e.g., "Claude")
 	Dir          string // Current directory basename
 	GitBranch    string // Current git branch (empty if not in git repo)
@@ -80,11 +80,11 @@ type StatusData struct {
 	BeadsNextTask   string // Title of next ready task, or empty if none
 
 	// Beads stats (raw values for conditionals)
-	BeadsTotalRaw      int // Total issues
-	BeadsOpenRaw       int // Open issues
-	BeadsReadyRaw      int // Ready to work issues
-	BeadsInProgressRaw int // In progress issues
-	BeadsBlockedRaw    int // Blocked issues
+	BeadsTotalRaw      int  // Total issues
+	BeadsOpenRaw       int  // Open issues
+	BeadsReadyRaw      int  // Ready to work issues
+	BeadsInProgressRaw int  // In progress issues
+	BeadsBlockedRaw    int  // Blocked issues
 	HasBeads           bool // Whether beads system is available
 }
 

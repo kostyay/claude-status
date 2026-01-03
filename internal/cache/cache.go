@@ -68,7 +68,6 @@ type CacheFile struct {
 	GitStatus     *CachedValue                 `json:"git_status,omitempty"`
 	GitDiffStats  *CachedDiffStats             `json:"git_diff_stats,omitempty"`
 	GitHubBuild   *CachedGitHubBuild           `json:"github_build,omitempty"`
-	BeadsStats    *CachedBeadsStats            `json:"beads_stats,omitempty"`     // deprecated, kept for migration
 	BeadsStatsMap map[string]*CachedBeadsStats `json:"beads_stats_map,omitempty"` // keyed by workDir
 	NextTaskMap   map[string]*CachedNextTask   `json:"next_task_map,omitempty"`   // keyed by workDir
 }

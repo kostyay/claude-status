@@ -475,16 +475,16 @@ func TestE2E_BeadsWidget(t *testing.T) {
 	}
 
 	data := template.StatusData{
-		Model:              "Claude",
-		Dir:                "myproject",
-		GitBranch:          "main",
-		HasBeads:           true,
-		BeadsReady:         "3 ready",
-		BeadsBlocked:       "1 blocked",
-		BeadsReadyRaw:      3,
-		BeadsBlockedRaw:    1,
-		ContextPctUse:      "45.2%",
-		ContextPctUseRaw:   45.2,
+		Model:            "Claude",
+		Dir:              "myproject",
+		GitBranch:        "main",
+		HasBeads:         true,
+		BeadsReady:       "3 ready",
+		BeadsBlocked:     "1 blocked",
+		BeadsReadyRaw:    3,
+		BeadsBlockedRaw:  1,
+		ContextPctUse:    "45.2%",
+		ContextPctUseRaw: 45.2,
 	}
 
 	output, err := engine.Render(data)
