@@ -26,12 +26,18 @@ type Commander interface {
 	Output(name string, args ...string) ([]byte, error)
 }
 
-// DefaultCommander executes commands using os/exec.
-type DefaultCommander struct{}
+// DefaultCommander executes commands using os/exec in a specific directory.
+type DefaultCommander struct {
+	workDir string
+}
 
 // Output runs a command and returns its output.
-func (DefaultCommander) Output(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).Output()
+func (d DefaultCommander) Output(name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...)
+	if d.workDir != "" {
+		cmd.Dir = d.workDir
+	}
+	return cmd.Output()
 }
 
 // Client fetches beads statistics.
@@ -44,7 +50,7 @@ type Client struct {
 func NewClient(workDir string) *Client {
 	return &Client{
 		workDir: workDir,
-		cmd:     DefaultCommander{},
+		cmd:     DefaultCommander{workDir: workDir},
 	}
 }
 
