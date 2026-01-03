@@ -82,3 +82,28 @@ func (c *Client) HasBeads() bool {
 	_, err := c.cmd.Output("bd", "stats", "--json")
 	return err == nil
 }
+
+// Issue represents a beads issue from bd ready --json.
+type Issue struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// GetNextTask returns the title of the next ready task, or empty if none.
+func (c *Client) GetNextTask() (string, error) {
+	output, err := c.cmd.Output("bd", "ready", "--json")
+	if err != nil {
+		return "", fmt.Errorf("failed to run bd ready: %w", err)
+	}
+
+	var issues []Issue
+	if err := json.Unmarshal(output, &issues); err != nil {
+		return "", fmt.Errorf("failed to parse bd ready output: %w", err)
+	}
+
+	if len(issues) == 0 {
+		return "", nil
+	}
+
+	return issues[0].Title, nil
+}

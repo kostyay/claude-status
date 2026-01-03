@@ -65,6 +65,7 @@ type CacheProvider interface {
 // BeadsProvider is an interface for beads operations.
 type BeadsProvider interface {
 	GetStats() (beads.Stats, error)
+	GetNextTask() (string, error)
 	HasBeads() bool
 }
 
@@ -296,6 +297,14 @@ func (b *Builder) fetchBeadsStats(data *template.StatusData) {
 	}
 
 	b.populateBeadsStats(data, stats)
+
+	// Get next task (not cached, fast enough)
+	nextTask, err := b.beads.GetNextTask()
+	if err != nil {
+		slog.Debug("failed to get next task", "err", err)
+		return
+	}
+	data.BeadsNextTask = nextTask
 }
 
 // populateBeadsStats populates beads statistics into StatusData.

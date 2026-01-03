@@ -63,6 +63,7 @@ type StatusData struct {
 	BeadsReady      string // "2 ready" or empty if 0
 	BeadsInProgress string // "1 wip" or empty if 0
 	BeadsBlocked    string // "1 blocked" or empty if 0
+	BeadsNextTask   string // Title of next ready task, or empty if none
 
 	// Beads stats (raw values for conditionals)
 	BeadsTotalRaw      int // Total issues

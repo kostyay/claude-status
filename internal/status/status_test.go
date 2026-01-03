@@ -103,10 +103,15 @@ type mockBeadsProvider struct {
 	stats    beads.Stats
 	err      error
 	hasBeads bool
+	nextTask string
 }
 
 func (m *mockBeadsProvider) GetStats() (beads.Stats, error) {
 	return m.stats, m.err
+}
+
+func (m *mockBeadsProvider) GetNextTask() (string, error) {
+	return m.nextTask, nil
 }
 
 func (m *mockBeadsProvider) HasBeads() bool {
