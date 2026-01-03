@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/kostyay/claude-status/internal/beads"
 	"github.com/kostyay/claude-status/internal/cache"
 	"github.com/kostyay/claude-status/internal/config"
 	"github.com/kostyay/claude-status/internal/git"
@@ -57,7 +58,14 @@ type CacheProvider interface {
 	GetGitStatus(indexPath string, fetchFn func() (string, error)) (string, error)
 	GetGitDiffStats(indexPath string, fetchFn func() (git.DiffStats, error)) (git.DiffStats, error)
 	GetGitHubBuild(refPath, branch string, ttl time.Duration, fetchFn func() (github.BuildStatus, error)) (github.BuildStatus, error)
+	GetBeadsStats(ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error)
 	EnsureDir() error
+}
+
+// BeadsProvider is an interface for beads operations.
+type BeadsProvider interface {
+	GetStats() (beads.Stats, error)
+	HasBeads() bool
 }
 
 // Builder constructs StatusData from various sources.
@@ -66,6 +74,7 @@ type Builder struct {
 	cache  CacheProvider
 	git    GitProvider
 	gh     GitHubProvider
+	beads  BeadsProvider
 }
 
 // ErrNilConfig is returned when a nil config is provided to NewBuilder.
@@ -95,16 +104,23 @@ func NewBuilder(cfg *config.Config, workDir string) (*Builder, error) {
 		slog.Debug("git client initialization skipped", "workDir", workDir, "err", err)
 	}
 
+	// Initialize beads client
+	beadsClient := beads.NewClient(workDir)
+	if beadsClient.HasBeads() {
+		b.beads = beadsClient
+	}
+
 	return b, nil
 }
 
 // NewBuilderWithDeps creates a new status builder with injected dependencies.
-func NewBuilderWithDeps(cfg *config.Config, cache CacheProvider, git GitProvider, gh GitHubProvider) *Builder {
+func NewBuilderWithDeps(cfg *config.Config, cache CacheProvider, git GitProvider, gh GitHubProvider, beads BeadsProvider) *Builder {
 	return &Builder{
 		config: cfg,
 		cache:  cache,
 		git:    git,
 		gh:     gh,
+		beads:  beads,
 	}
 }
 
@@ -122,6 +138,9 @@ func (b *Builder) Build(input Input) template.StatusData {
 
 	// Parse token metrics from transcript
 	b.populateTokenMetrics(&data, input)
+
+	// Get beads stats (cached with TTL) - independent of git
+	b.fetchBeadsStats(&data)
 
 	if b.git == nil {
 		return data
@@ -261,4 +280,46 @@ func (b *Builder) fetchGitHubStatus(data *template.StatusData, branch string) {
 // SetGitHubClient sets the GitHub client (for lazy initialization or testing).
 func (b *Builder) SetGitHubClient(gh GitHubProvider) {
 	b.gh = gh
+}
+
+// fetchBeadsStats fetches beads stats and populates the data.
+func (b *Builder) fetchBeadsStats(data *template.StatusData) {
+	if b.beads == nil {
+		return
+	}
+
+	ttl := time.Duration(b.config.BeadsTTL) * time.Second
+	stats, err := b.cache.GetBeadsStats(ttl, b.beads.GetStats)
+	if err != nil {
+		slog.Debug("failed to get beads stats", "err", err)
+		return
+	}
+
+	b.populateBeadsStats(data, stats)
+}
+
+// populateBeadsStats populates beads statistics into StatusData.
+func (b *Builder) populateBeadsStats(data *template.StatusData, stats beads.Stats) {
+	data.HasBeads = true
+
+	// Raw values
+	data.BeadsTotalRaw = stats.TotalIssues
+	data.BeadsOpenRaw = stats.OpenIssues
+	data.BeadsReadyRaw = stats.ReadyIssues
+	data.BeadsInProgressRaw = stats.InProgressIssues
+	data.BeadsBlockedRaw = stats.BlockedIssues
+
+	// Formatted values (only if non-zero)
+	if stats.OpenIssues > 0 {
+		data.BeadsOpen = fmt.Sprintf("%d open", stats.OpenIssues)
+	}
+	if stats.ReadyIssues > 0 {
+		data.BeadsReady = fmt.Sprintf("%d ready", stats.ReadyIssues)
+	}
+	if stats.InProgressIssues > 0 {
+		data.BeadsInProgress = fmt.Sprintf("%d wip", stats.InProgressIssues)
+	}
+	if stats.BlockedIssues > 0 {
+		data.BeadsBlocked = fmt.Sprintf("%d blocked", stats.BlockedIssues)
+	}
 }

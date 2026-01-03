@@ -57,6 +57,20 @@ type StatusData struct {
 	ContextLengthRaw int64   // Raw context length
 	ContextPctRaw    float64 // Raw context percentage
 	ContextPctUseRaw float64 // Raw usable context percentage
+
+	// Beads stats (formatted)
+	BeadsOpen       string // "3 open" or empty if 0
+	BeadsReady      string // "2 ready" or empty if 0
+	BeadsInProgress string // "1 wip" or empty if 0
+	BeadsBlocked    string // "1 blocked" or empty if 0
+
+	// Beads stats (raw values for conditionals)
+	BeadsTotalRaw      int // Total issues
+	BeadsOpenRaw       int // Open issues
+	BeadsReadyRaw      int // Ready to work issues
+	BeadsInProgressRaw int // In progress issues
+	BeadsBlockedRaw    int // Blocked issues
+	HasBeads           bool // Whether beads system is available
 }
 
 // funcs is the template function map with color helpers.

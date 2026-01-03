@@ -15,6 +15,10 @@ const DefaultTemplate = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{
 // Usage: set "template" in config.json to this value.
 const TemplateWithTokens = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{.TokensInput}} Out:{{.TokensOutput}} Cache:{{.TokensCached}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}`
 
+// TemplateWithBeads is an example template that shows beads task stats.
+// Usage: set "template" in config.json to this value.
+const TemplateWithBeads = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}{{if .HasBeads}} | {{yellow}}📋 {{.BeadsReady}}{{reset}}{{if .BeadsBlocked}} {{red}}{{.BeadsBlocked}}{{reset}}{{end}}{{end}}`
+
 // Config holds the configuration for claude-status.
 type Config struct {
 	// Template is the Go template string for rendering the status line.
@@ -25,6 +29,9 @@ type Config struct {
 
 	// GitHubTTL is the time-to-live in seconds for cached GitHub build status.
 	GitHubTTL int `json:"github_ttl"`
+
+	// BeadsTTL is the time-to-live in seconds for cached beads stats.
+	BeadsTTL int `json:"beads_ttl"`
 
 	// LoggingEnabled enables logging of status line events.
 	LoggingEnabled bool `json:"logging_enabled"`
@@ -39,6 +46,7 @@ func Default() Config {
 		Template:       DefaultTemplate,
 		GitHubWorkflow: "build_and_test",
 		GitHubTTL:      60,
+		BeadsTTL:       60,
 		LoggingEnabled: false,
 		LogPath:        "",
 	}
@@ -79,6 +87,9 @@ func LoadFrom(path string) Config {
 	}
 	if fileCfg.GitHubTTL > 0 {
 		cfg.GitHubTTL = fileCfg.GitHubTTL
+	}
+	if fileCfg.BeadsTTL > 0 {
+		cfg.BeadsTTL = fileCfg.BeadsTTL
 	}
 	// LoggingEnabled is a bool, so we check if it was explicitly set
 	// by seeing if the JSON had the field (we need to re-parse for this)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/kostyay/claude-status/internal/beads"
 	"github.com/kostyay/claude-status/internal/git"
 	"github.com/kostyay/claude-status/internal/github"
 )
@@ -49,12 +50,19 @@ type CachedDiffStats struct {
 	CachedAt  time.Time     `json:"cached_at"`
 }
 
+// CachedBeadsStats holds cached beads statistics.
+type CachedBeadsStats struct {
+	Stats    beads.Stats `json:"stats"`
+	CachedAt time.Time   `json:"cached_at"`
+}
+
 // CacheFile is the structure of the cache file on disk.
 type CacheFile struct {
 	GitBranch    *CachedValue       `json:"git_branch,omitempty"`
 	GitStatus    *CachedValue       `json:"git_status,omitempty"`
 	GitDiffStats *CachedDiffStats   `json:"git_diff_stats,omitempty"`
 	GitHubBuild  *CachedGitHubBuild `json:"github_build,omitempty"`
+	BeadsStats   *CachedBeadsStats  `json:"beads_stats,omitempty"`
 }
 
 // Manager handles cache operations with file-based persistence.
@@ -334,6 +342,58 @@ func (m *Manager) GetGitHubBuild(refPath, branch string, ttl time.Duration, fetc
 		m.save(cache)
 
 		result = status
+	})
+
+	return result, resultErr
+}
+
+// GetBeadsStats returns cached beads stats or fetches them if the cache is invalid.
+// The cache is invalidated when the TTL expires.
+func (m *Manager) GetBeadsStats(ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error) {
+	var result beads.Stats
+	var resultErr error
+
+	m.withFileLock(func() {
+		// Check cache
+		m.mu.RLock()
+		cache := m.load()
+		m.mu.RUnlock()
+
+		if cache.BeadsStats != nil {
+			ttlValid := m.clock.Now().Sub(cache.BeadsStats.CachedAt) < ttl
+			if ttlValid {
+				result = cache.BeadsStats.Stats
+				return
+			}
+		}
+
+		// Cache miss - fetch and store
+		stats, err := fetchFn()
+		if err != nil {
+			resultErr = err
+			return
+		}
+
+		m.mu.Lock()
+		defer m.mu.Unlock()
+
+		// Re-check cache after acquiring write lock (TOCTOU protection)
+		cache = m.load()
+		if cache.BeadsStats != nil {
+			ttlValid := m.clock.Now().Sub(cache.BeadsStats.CachedAt) < ttl
+			if ttlValid {
+				result = cache.BeadsStats.Stats
+				return
+			}
+		}
+
+		cache.BeadsStats = &CachedBeadsStats{
+			Stats:    stats,
+			CachedAt: m.clock.Now(),
+		}
+		m.save(cache)
+
+		result = stats
 	})
 
 	return result, resultErr

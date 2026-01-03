@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kostyay/claude-status/internal/beads"
 	"github.com/kostyay/claude-status/internal/github"
 )
 
@@ -666,5 +667,94 @@ func TestFileLockSerializesMultipleManagers(t *testing.T) {
 	// OR both fetch but sequentially (depends on timing)
 	if len(order) == 0 {
 		t.Error("expected at least one fetch to occur")
+	}
+}
+
+func TestGetBeadsStats_CacheMiss(t *testing.T) {
+	manager, _, _ := setupTestCache(t)
+
+	fetchCalls := 0
+	fetchFn := func() (beads.Stats, error) {
+		fetchCalls++
+		return beads.Stats{
+			TotalIssues:      10,
+			OpenIssues:       5,
+			InProgressIssues: 2,
+			ReadyIssues:      3,
+			BlockedIssues:    1,
+		}, nil
+	}
+
+	stats, err := manager.GetBeadsStats(60*time.Second, fetchFn)
+	if err != nil {
+		t.Fatalf("GetBeadsStats() error = %v", err)
+	}
+	if stats.TotalIssues != 10 {
+		t.Errorf("GetBeadsStats().TotalIssues = %d, want %d", stats.TotalIssues, 10)
+	}
+	if stats.OpenIssues != 5 {
+		t.Errorf("GetBeadsStats().OpenIssues = %d, want %d", stats.OpenIssues, 5)
+	}
+	if fetchCalls != 1 {
+		t.Errorf("fetchFn called %d times, want 1", fetchCalls)
+	}
+}
+
+func TestGetBeadsStats_CacheHit(t *testing.T) {
+	manager, _, _ := setupTestCache(t)
+
+	fetchCalls := 0
+	fetchFn := func() (beads.Stats, error) {
+		fetchCalls++
+		return beads.Stats{
+			TotalIssues: 10,
+			OpenIssues:  5,
+		}, nil
+	}
+
+	// First call populates cache
+	manager.GetBeadsStats(60*time.Second, fetchFn)
+
+	// Second call should hit cache
+	stats, err := manager.GetBeadsStats(60*time.Second, fetchFn)
+	if err != nil {
+		t.Fatalf("GetBeadsStats() error = %v", err)
+	}
+	if stats.TotalIssues != 10 {
+		t.Errorf("GetBeadsStats().TotalIssues = %d, want %d", stats.TotalIssues, 10)
+	}
+	if fetchCalls != 1 {
+		t.Errorf("fetchFn called %d times, want 1 (cache should hit)", fetchCalls)
+	}
+}
+
+func TestGetBeadsStats_TTLExpired(t *testing.T) {
+	manager, _, clock := setupTestCache(t)
+
+	fetchCalls := 0
+	fetchFn := func() (beads.Stats, error) {
+		fetchCalls++
+		if fetchCalls == 1 {
+			return beads.Stats{TotalIssues: 10}, nil
+		}
+		return beads.Stats{TotalIssues: 15}, nil
+	}
+
+	// First fetch
+	manager.GetBeadsStats(60*time.Second, fetchFn)
+
+	// Advance time past TTL
+	clock.Advance(61 * time.Second)
+
+	// Second fetch should invalidate due to TTL
+	stats, err := manager.GetBeadsStats(60*time.Second, fetchFn)
+	if err != nil {
+		t.Fatalf("GetBeadsStats() error = %v", err)
+	}
+	if stats.TotalIssues != 15 {
+		t.Errorf("GetBeadsStats().TotalIssues = %d, want %d", stats.TotalIssues, 15)
+	}
+	if fetchCalls != 2 {
+		t.Errorf("fetchFn called %d times, want 2", fetchCalls)
 	}
 }
