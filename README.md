@@ -19,7 +19,7 @@ work | [Sonnet 4] | 📁 my-project | 🌿 main ±3 +42,-10 ✨2📝1 | ✅ | �
 - **Smart Caching** - Git info cached based on file modification times; no redundant git calls
 - **GitHub CI Status** - Shows build status (✅ ❌ 🔄) for your current branch
 - **Git Diff Stats** - Line additions/deletions and file change counts
-- **Task Tracking** - Integrates with [beads](https://github.com/anthropics/beads) for task visibility
+- **Task Tracking** - Integrates with [beads](https://github.com/steveyegge/beads) for task visibility
 - **Multi-Profile** - Use `--prefix` to identify different Claude sessions
 - **Customizable** - Full Go template support with ANSI colors
 - **Zero Config** - Works out of the box with sensible defaults
