@@ -9,11 +9,17 @@ import (
 // DefaultTemplate is the default Go template for the status line.
 // It replicates the Python version's output with emojis and adds git changes.
 // Uses ContextPctUse (usable context before auto-compact) to match Claude's display.
-const DefaultTemplate = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditionsRaw .GitDeletionsRaw}} {{green}}{{.GitAdditions}}{{reset}},{{red}}{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFilesRaw .GitModifiedFilesRaw .GitDeletedFilesRaw}} {{.GitNewFiles}}{{.GitModifiedFiles}}{{.GitDeletedFiles}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}`
+// Prefix color is set via --prefix-color flag (defaults to cyan if prefix is set).
+const DefaultTemplate = `{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditionsRaw .GitDeletionsRaw}} {{green}}{{.GitAdditions}}{{reset}},{{red}}{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFilesRaw .GitModifiedFilesRaw .GitDeletedFilesRaw}} {{.GitNewFiles}}{{.GitModifiedFiles}}{{.GitDeletedFiles}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .BeadsReady}}
+{{yellow}}📋 Tasks: {{.BeadsReady}}{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}}{{reset}}{{end}}{{if .BeadsNextTask}}. Next Up: {{.BeadsNextTask}}{{end}}{{end}}`
 
 // TemplateWithTokens is an example template that shows all token metrics.
 // Usage: set "template" in config.json to this value.
 const TemplateWithTokens = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{.TokensInput}} Out:{{.TokensOutput}} Cache:{{.TokensCached}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}`
+
+// TemplateWithBeads is an example template that shows beads task stats.
+// Usage: set "template" in config.json to this value.
+const TemplateWithBeads = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}{{if .BeadsReady}} | {{yellow}}📋 Tasks: {{.BeadsReady}}{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}}{{reset}}{{end}}{{if .BeadsNextTask}}. Next Up: {{.BeadsNextTask}}{{end}}{{end}}`
 
 // Config holds the configuration for claude-status.
 type Config struct {
@@ -25,6 +31,9 @@ type Config struct {
 
 	// GitHubTTL is the time-to-live in seconds for cached GitHub build status.
 	GitHubTTL int `json:"github_ttl"`
+
+	// BeadsTTL is the time-to-live in seconds for cached beads stats.
+	BeadsTTL int `json:"beads_ttl"`
 
 	// LoggingEnabled enables logging of status line events.
 	LoggingEnabled bool `json:"logging_enabled"`
@@ -39,6 +48,7 @@ func Default() Config {
 		Template:       DefaultTemplate,
 		GitHubWorkflow: "build_and_test",
 		GitHubTTL:      60,
+		BeadsTTL:       5,
 		LoggingEnabled: false,
 		LogPath:        "",
 	}
@@ -79,6 +89,9 @@ func LoadFrom(path string) Config {
 	}
 	if fileCfg.GitHubTTL > 0 {
 		cfg.GitHubTTL = fileCfg.GitHubTTL
+	}
+	if fileCfg.BeadsTTL > 0 {
+		cfg.BeadsTTL = fileCfg.BeadsTTL
 	}
 	// LoggingEnabled is a bool, so we check if it was explicitly set
 	// by seeing if the JSON had the field (we need to re-parse for this)

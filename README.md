@@ -9,7 +9,8 @@ A fast, lightweight status line for [Claude Code CLI](https://docs.anthropic.com
 ![Example status line](https://img.shields.io/badge/Claude-Sonnet_4-cyan) ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go) ![License](https://img.shields.io/badge/License-MIT-green)
 
 ```
-[Sonnet 4] | 📁 my-project | 🌿 main ±3 | ✅
+work | [Sonnet 4] | 📁 my-project | 🌿 main ±3 +42,-10 ✨2📝1 | ✅ | 📊 56.5%
+📋 Tasks: 2 ready, 1 blocked. Next Up: Implement feature X
 ```
 
 ## Features
@@ -17,6 +18,9 @@ A fast, lightweight status line for [Claude Code CLI](https://docs.anthropic.com
 - **Fast** - Single binary, ~10MB, sub-millisecond startup
 - **Smart Caching** - Git info cached based on file modification times; no redundant git calls
 - **GitHub CI Status** - Shows build status (✅ ❌ 🔄) for your current branch
+- **Git Diff Stats** - Line additions/deletions and file change counts
+- **Task Tracking** - Integrates with [beads](https://github.com/anthropics/beads) for task visibility
+- **Multi-Profile** - Use `--prefix` to identify different Claude sessions
 - **Customizable** - Full Go template support with ANSI colors
 - **Zero Config** - Works out of the box with sensible defaults
 - **XDG Compliant** - Config, cache, and data stored in standard locations
@@ -65,6 +69,22 @@ Alternatively, manually add to your Claude Code settings (`~/.claude/settings.js
 
 That's it! The status line will appear in your Claude Code sessions.
 
+### Multi-Profile Support
+
+Use `--prefix` to identify different Claude Code sessions (e.g., work vs personal):
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/path/to/claude-status --prefix work --prefix-color blue",
+    "padding": 0
+  }
+}
+```
+
+Available colors: `cyan` (default), `blue`, `green`, `yellow`, `red`, `magenta`, `gray`
+
 ### Custom Config Directory
 
 If you use a custom Claude Code config directory, set `CLAUDE_CONFIG_DIR`:
@@ -77,13 +97,17 @@ CLAUDE_CONFIG_DIR=/custom/path ./claude-status -install
 
 | Component | Description | Example |
 |-----------|-------------|---------|
+| **Prefix** | Optional profile identifier | `work` |
 | **Model** | Current Claude model | `[Sonnet 4]` |
 | **Directory** | Current working directory | `📁 my-project` |
 | **Git Branch** | Current branch name | `🌿 main` |
 | **Git Status** | Uncommitted changes count | `±3` |
+| **Git Diff** | Line additions/deletions | `+42,-10` |
+| **Git Files** | New/modified/deleted files | `✨2📝1🗑1` |
 | **GitHub CI** | Latest workflow run status | `✅` `❌` `🔄` |
 | **Context %** | Usable context usage before auto-compact (color-coded) | `📊 56.5%` |
 | **Version** | Claude Code version | `v1.0.0` |
+| **Tasks** | Task tracking stats (if [beads](https://github.com/anthropics/beads) is configured) | `📋 Tasks: 2 ready, 1 blocked` |
 
 ### Token Metrics (Available in Templates)
 
@@ -106,6 +130,18 @@ CLAUDE_CONFIG_DIR=/custom/path ./claude-status -install
 | 🔄 | Build in progress |
 | ⚠️ | Status unknown |
 
+### Task Tracking (beads)
+
+If you use [beads](https://github.com/anthropics/beads) for task tracking, claude-status automatically detects the `.beads/` directory and shows task stats on a second line:
+
+```
+📋 Tasks: 2 ready, 1 blocked. Next Up: Implement feature X
+```
+
+- **Ready** - Tasks with no blockers that can be started
+- **Blocked** - Tasks waiting on dependencies
+- **Next Up** - Title of the first ready task
+
 ## Configuration
 
 Create `~/.config/claude-status/config.json`:
@@ -126,16 +162,24 @@ Create `~/.config/claude-status/config.json`:
 | `template` | string | (see below) | Go template for status line |
 | `github_workflow` | string | `"build_and_test"` | GitHub Actions workflow name to monitor |
 | `github_ttl` | int | `60` | Seconds to cache GitHub status |
+| `beads_ttl` | int | `5` | Seconds to cache beads task stats |
 | `logging_enabled` | bool | `false` | Enable status line logging |
 | `log_path` | string | XDG data dir | Custom log file path |
 
 ### Default Template
 
+The default template shows a complete status line with prefix support, git diff stats, and a second line for task tracking (if beads is configured):
+
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}
+{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditionsRaw .GitDeletionsRaw}} {{green}}{{.GitAdditions}}{{reset}},{{red}}{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFilesRaw .GitModifiedFilesRaw .GitDeletedFilesRaw}} {{.GitNewFiles}}{{.GitModifiedFiles}}{{.GitDeletedFiles}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .BeadsReady}}
+{{yellow}}📋 Tasks: {{.BeadsReady}}{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}}{{reset}}{{end}}{{if .BeadsNextTask}}. Next Up: {{.BeadsNextTask}}{{end}}{{end}}
 ```
 
-The default template shows usable context percentage (before auto-compact at 80%) with color-coded display (green/yellow/red based on usage). This matches Claude Code's "Context left until auto-compact" metric.
+Features:
+- **Prefix** - Optional profile identifier (via `--prefix` flag)
+- **Context percentage** - Color-coded (green/yellow/red) based on usage
+- **Git diff stats** - Shows additions, deletions, and file changes
+- **Task tracking** - Second line with beads task stats (if available)
 
 ## Template Reference
 
@@ -143,10 +187,22 @@ The default template shows usable context percentage (before auto-compact at 80%
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `.Prefix` | string | Profile prefix (from `--prefix` flag) |
+| `.PrefixColor` | string | ANSI color code for prefix (from `--prefix-color`) |
 | `.Model` | string | Model display name (e.g., "Claude", "Sonnet 4") |
 | `.Dir` | string | Current directory basename |
 | `.GitBranch` | string | Current git branch (empty if not in repo) |
 | `.GitStatus` | string | Change indicator like "±3" (empty if clean) |
+| `.GitAdditions` | string | Line additions (e.g., "+42", empty if 0) |
+| `.GitDeletions` | string | Line deletions (e.g., "-10", empty if 0) |
+| `.GitNewFiles` | string | New files count (e.g., "✨2", empty if 0) |
+| `.GitModifiedFiles` | string | Modified files count (e.g., "📝1", empty if 0) |
+| `.GitDeletedFiles` | string | Deleted files count (e.g., "🗑1", empty if 0) |
+| `.GitAdditionsRaw` | int | Raw additions count (for conditionals) |
+| `.GitDeletionsRaw` | int | Raw deletions count |
+| `.GitNewFilesRaw` | int | Raw new files count |
+| `.GitModifiedFilesRaw` | int | Raw modified files count |
+| `.GitDeletedFilesRaw` | int | Raw deleted files count |
 | `.GitHubStatus` | string | CI status emoji (empty if unavailable) |
 | `.Version` | string | Claude Code version |
 | `.TokensInput` | string | Input tokens (formatted, e.g., "10.5k") |
@@ -163,6 +219,17 @@ The default template shows usable context percentage (before auto-compact at 80%
 | `.ContextLengthRaw` | int64 | Raw context length |
 | `.ContextPctUseRaw` | float64 | Raw usable context percentage (for `ctxColor`) - **used in default template** |
 | `.ContextPctRaw` | float64 | Raw context percentage of max tokens |
+| `.BeadsOpen` | string | Open issues (e.g., "3 open", empty if 0) |
+| `.BeadsReady` | string | Ready issues (e.g., "2 ready", empty if 0) |
+| `.BeadsInProgress` | string | In-progress issues (e.g., "1 wip", empty if 0) |
+| `.BeadsBlocked` | string | Blocked issues (e.g., "1 blocked", empty if 0) |
+| `.BeadsNextTask` | string | Title of next ready task (empty if none) |
+| `.BeadsTotalRaw` | int | Raw total issues count |
+| `.BeadsOpenRaw` | int | Raw open issues count |
+| `.BeadsReadyRaw` | int | Raw ready issues count |
+| `.BeadsInProgressRaw` | int | Raw in-progress count |
+| `.BeadsBlockedRaw` | int | Raw blocked count |
+| `.HasBeads` | bool | Whether beads system is available |
 
 ### Color Functions
 
@@ -173,6 +240,7 @@ The default template shows usable context percentage (before auto-compact at 80%
 | `{{green}}` | Green color |
 | `{{yellow}}` | Yellow color |
 | `{{red}}` | Red color |
+| `{{magenta}}` | Magenta color |
 | `{{gray}}` | Gray color |
 | `{{bold}}` | Bold text |
 | `{{reset}}` | Reset formatting |
@@ -203,6 +271,16 @@ The default template shows usable context percentage (before auto-compact at 80%
 **Context-focused (shows usable context percentage):**
 ```
 {{cyan}}[{{.Model}}]{{reset}} | {{.Dir}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}Ctx: {{.ContextLength}} ({{.ContextPctUse}}){{reset}}{{end}}
+```
+
+**With git diff stats:**
+```
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{reset}}{{if or .GitAdditionsRaw .GitDeletionsRaw}} {{green}}{{.GitAdditions}}{{reset}},{{red}}{{.GitDeletions}}{{reset}}{{end}}{{end}}
+```
+
+**Task-focused (for beads users):**
+```
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .BeadsReady}} | {{yellow}}📋 {{.BeadsReady}}{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}}{{reset}}{{end}}{{end}}
 ```
 
 ## GitHub Integration
@@ -278,6 +356,7 @@ go test -v ./...
 ```
 ├── cmd/claude-status/    # Main entry point
 ├── internal/
+│   ├── beads/            # Beads task tracking integration
 │   ├── cache/            # File-based caching
 │   ├── config/           # Configuration loading
 │   ├── git/              # Git operations
@@ -323,6 +402,9 @@ echo '{}' | claude-status 2>&1
 | Widgets | Template-based | Widget-based |
 | Token metrics | ✅ Full support | ✅ Full support |
 | Context tracking | ✅ Model-aware (1M/200k) | ✅ Model-aware |
+| Git diff stats | ✅ Additions/deletions/files | ❌ |
+| Task tracking | ✅ beads integration | ❌ |
+| Multi-profile | ✅ `--prefix` flag | ❌ |
 | Powerline fonts | Via template | Built-in support |
 
 claude-status prioritizes speed and simplicity. If you need more widgets and interactive configuration, check out [ccstatusline](https://github.com/sirmalloc/ccstatusline).

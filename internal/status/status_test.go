@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kostyay/claude-status/internal/beads"
 	"github.com/kostyay/claude-status/internal/config"
 	"github.com/kostyay/claude-status/internal/git"
 	"github.com/kostyay/claude-status/internal/github"
@@ -52,10 +53,12 @@ type mockCacheProvider struct {
 	diffStatsValue git.DiffStats
 	buildStatus    github.BuildStatus
 	buildErr       error
+	beadsStats     beads.Stats
 	fetchBranch    bool
 	fetchStatus    bool
 	fetchDiffStats bool
 	fetchBuild     bool
+	fetchBeads     bool
 }
 
 func (m *mockCacheProvider) EnsureDir() error { return nil }
@@ -88,6 +91,37 @@ func (m *mockCacheProvider) GetGitHubBuild(refPath, branch string, ttl time.Dura
 	return m.buildStatus, m.buildErr
 }
 
+func (m *mockCacheProvider) GetBeadsStats(workDir string, ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error) {
+	if m.fetchBeads {
+		return fetchFn()
+	}
+	return m.beadsStats, nil
+}
+
+func (m *mockCacheProvider) GetNextTask(workDir string, ttl time.Duration, fetchFn func() (string, error)) (string, error) {
+	return fetchFn()
+}
+
+// mockBeadsProvider is a test double for BeadsProvider.
+type mockBeadsProvider struct {
+	stats    beads.Stats
+	err      error
+	hasBeads bool
+	nextTask string
+}
+
+func (m *mockBeadsProvider) GetStats() (beads.Stats, error) {
+	return m.stats, m.err
+}
+
+func (m *mockBeadsProvider) GetNextTask() (string, error) {
+	return m.nextTask, nil
+}
+
+func (m *mockBeadsProvider) HasBeads() bool {
+	return m.hasBeads
+}
+
 func TestBuild_AllData(t *testing.T) {
 	cfg := config.Default()
 
@@ -106,7 +140,7 @@ func TestBuild_AllData(t *testing.T) {
 		buildStatus: github.StatusSuccess,
 	}
 
-	builder := NewBuilderWithDeps(&cfg, cache, git, gh)
+	builder := NewBuilderWithDeps(&cfg, cache, git, gh, nil, "")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -141,7 +175,7 @@ func TestBuild_NoGit(t *testing.T) {
 	cache := &mockCacheProvider{}
 
 	// nil git provider simulates not being in a git repo
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil)
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -183,7 +217,7 @@ func TestBuild_GitNoGitHub(t *testing.T) {
 		statusValue: "±3",
 	}
 
-	builder := NewBuilderWithDeps(&cfg, cache, git, nil)
+	builder := NewBuilderWithDeps(&cfg, cache, git, nil, nil, "")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -220,7 +254,7 @@ func TestBuild_GitHubFailure(t *testing.T) {
 		fetchBuild:  true, // Actually call the fetch function
 	}
 
-	builder := NewBuilderWithDeps(&cfg, cache, git, gh)
+	builder := NewBuilderWithDeps(&cfg, cache, git, gh, nil, "")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -261,7 +295,7 @@ func TestBuild_CacheHit(t *testing.T) {
 		fetchBuild:  false,
 	}
 
-	builder := NewBuilderWithDeps(&cfg, cache, git, gh)
+	builder := NewBuilderWithDeps(&cfg, cache, git, gh, nil, "")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -300,7 +334,7 @@ func TestBuild_CacheMiss(t *testing.T) {
 		fetchBuild:  true,
 	}
 
-	builder := NewBuilderWithDeps(&cfg, cache, git, gh)
+	builder := NewBuilderWithDeps(&cfg, cache, git, gh, nil, "")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -338,7 +372,7 @@ func TestBuild_PartialFailure(t *testing.T) {
 		fetchStatus: true,
 	}
 
-	builder := NewBuilderWithDeps(&cfg, cache, git, nil)
+	builder := NewBuilderWithDeps(&cfg, cache, git, nil, nil, "")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -365,7 +399,7 @@ func TestBuild_DefaultModel(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil)
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: ""}, // Empty
@@ -383,7 +417,7 @@ func TestBuild_DirBasename(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil)
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -411,7 +445,7 @@ func TestBuild_TokenMetrics(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil)
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
 
 	// Create a temporary transcript file
 	tmpDir := t.TempDir()
@@ -470,7 +504,7 @@ func TestBuild_TokenMetrics_EmptyPath(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil)
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
 
 	input := Input{
 		Model:          ModelInfo{DisplayName: "Claude"},
@@ -493,7 +527,7 @@ func TestBuild_TokenMetrics_InvalidPath(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil)
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
 
 	input := Input{
 		Model:          ModelInfo{DisplayName: "Claude"},
@@ -514,4 +548,199 @@ func TestBuild_TokenMetrics_InvalidPath(t *testing.T) {
 
 func writeTestFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func TestBuild_BeadsStats(t *testing.T) {
+	cfg := config.Default()
+
+	beadsProvider := &mockBeadsProvider{
+		stats: beads.Stats{
+			TotalIssues:      10,
+			OpenIssues:       5,
+			InProgressIssues: 2,
+			ReadyIssues:      3,
+			BlockedIssues:    1,
+		},
+		hasBeads: true,
+	}
+
+	cache := &mockCacheProvider{
+		fetchBeads: true,
+	}
+
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, beadsProvider, "/project")
+
+	input := Input{
+		Model:     ModelInfo{DisplayName: "Claude"},
+		Workspace: WorkspaceInfo{CurrentDir: "/project"},
+	}
+
+	data := builder.Build(input)
+
+	// Check beads stats are populated
+	if !data.HasBeads {
+		t.Error("HasBeads should be true")
+	}
+	if data.BeadsTotalRaw != 10 {
+		t.Errorf("BeadsTotalRaw = %d, want %d", data.BeadsTotalRaw, 10)
+	}
+	if data.BeadsOpenRaw != 5 {
+		t.Errorf("BeadsOpenRaw = %d, want %d", data.BeadsOpenRaw, 5)
+	}
+	if data.BeadsReadyRaw != 3 {
+		t.Errorf("BeadsReadyRaw = %d, want %d", data.BeadsReadyRaw, 3)
+	}
+	if data.BeadsInProgressRaw != 2 {
+		t.Errorf("BeadsInProgressRaw = %d, want %d", data.BeadsInProgressRaw, 2)
+	}
+	if data.BeadsBlockedRaw != 1 {
+		t.Errorf("BeadsBlockedRaw = %d, want %d", data.BeadsBlockedRaw, 1)
+	}
+
+	// Check formatted values
+	if data.BeadsOpen != "5 open" {
+		t.Errorf("BeadsOpen = %q, want %q", data.BeadsOpen, "5 open")
+	}
+	if data.BeadsReady != "3 ready" {
+		t.Errorf("BeadsReady = %q, want %q", data.BeadsReady, "3 ready")
+	}
+	if data.BeadsInProgress != "2 wip" {
+		t.Errorf("BeadsInProgress = %q, want %q", data.BeadsInProgress, "2 wip")
+	}
+	if data.BeadsBlocked != "1 blocked" {
+		t.Errorf("BeadsBlocked = %q, want %q", data.BeadsBlocked, "1 blocked")
+	}
+}
+
+func TestBuild_NoBeads(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+
+	// nil beads provider simulates beads not available
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+
+	input := Input{
+		Model:     ModelInfo{DisplayName: "Claude"},
+		Workspace: WorkspaceInfo{CurrentDir: "/project"},
+	}
+
+	data := builder.Build(input)
+
+	if data.HasBeads {
+		t.Error("HasBeads should be false when beads provider is nil")
+	}
+	if data.BeadsOpenRaw != 0 {
+		t.Errorf("BeadsOpenRaw = %d, want 0", data.BeadsOpenRaw)
+	}
+	if data.BeadsOpen != "" {
+		t.Errorf("BeadsOpen = %q, want empty", data.BeadsOpen)
+	}
+}
+
+func TestSetPrefix_Simple(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+
+	builder.SetPrefix("WORK")
+
+	input := Input{
+		Model:     ModelInfo{DisplayName: "Claude"},
+		Workspace: WorkspaceInfo{CurrentDir: "/project"},
+	}
+
+	data := builder.Build(input)
+
+	// Prefix is stored as plain string (color applied by template)
+	if data.Prefix != "WORK" {
+		t.Errorf("Prefix = %q, want %q", data.Prefix, "WORK")
+	}
+}
+
+func TestSetPrefix_SpecialChars(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+
+	// Prefix is now stored as plain string - special chars are preserved as-is
+	// Color is applied by the template via prefixColor function
+	builder.SetPrefix("{{WORK}}")
+
+	input := Input{
+		Model:     ModelInfo{DisplayName: "Claude"},
+		Workspace: WorkspaceInfo{CurrentDir: "/project"},
+	}
+
+	data := builder.Build(input)
+
+	// Braces are preserved as literal text (no template parsing)
+	if data.Prefix != "{{WORK}}" {
+		t.Errorf("Prefix = %q, want %q", data.Prefix, "{{WORK}}")
+	}
+}
+
+func TestSetPrefix_Empty(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+
+	builder.SetPrefix("")
+
+	input := Input{
+		Model:     ModelInfo{DisplayName: "Claude"},
+		Workspace: WorkspaceInfo{CurrentDir: "/project"},
+	}
+
+	data := builder.Build(input)
+
+	if data.Prefix != "" {
+		t.Errorf("Prefix = %q, want empty", data.Prefix)
+	}
+}
+
+func TestBuild_BeadsZeroValues(t *testing.T) {
+	cfg := config.Default()
+
+	beadsProvider := &mockBeadsProvider{
+		stats: beads.Stats{
+			TotalIssues:      0,
+			OpenIssues:       0,
+			InProgressIssues: 0,
+			ReadyIssues:      0,
+			BlockedIssues:    0,
+		},
+		hasBeads: true,
+	}
+
+	cache := &mockCacheProvider{
+		fetchBeads: true,
+	}
+
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, beadsProvider, "/project")
+
+	input := Input{
+		Model:     ModelInfo{DisplayName: "Claude"},
+		Workspace: WorkspaceInfo{CurrentDir: "/project"},
+	}
+
+	data := builder.Build(input)
+
+	// Should have HasBeads true even with zero values
+	if !data.HasBeads {
+		t.Error("HasBeads should be true even with zero stats")
+	}
+
+	// Formatted values should be empty for zero values
+	if data.BeadsOpen != "" {
+		t.Errorf("BeadsOpen = %q, want empty for zero", data.BeadsOpen)
+	}
+	if data.BeadsReady != "" {
+		t.Errorf("BeadsReady = %q, want empty for zero", data.BeadsReady)
+	}
+	if data.BeadsInProgress != "" {
+		t.Errorf("BeadsInProgress = %q, want empty for zero", data.BeadsInProgress)
+	}
+	if data.BeadsBlocked != "" {
+		t.Errorf("BeadsBlocked = %q, want empty for zero", data.BeadsBlocked)
+	}
 }

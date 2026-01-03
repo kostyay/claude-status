@@ -7,18 +7,32 @@ import (
 
 // ANSI color codes
 const (
-	colorCyan   = "\033[36m"
-	colorBlue   = "\033[34m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorRed    = "\033[31m"
-	colorGray   = "\033[90m"
-	colorReset  = "\033[0m"
-	colorBold   = "\033[1m"
+	colorCyan    = "\033[36m"
+	colorBlue    = "\033[34m"
+	colorGreen   = "\033[32m"
+	colorYellow  = "\033[33m"
+	colorRed     = "\033[31m"
+	colorMagenta = "\033[35m"
+	colorGray    = "\033[90m"
+	colorReset   = "\033[0m"
+	colorBold    = "\033[1m"
 )
+
+// ColorMap maps color names to ANSI codes for use with --prefix-color flag.
+var ColorMap = map[string]string{
+	"cyan":    colorCyan,
+	"blue":    colorBlue,
+	"green":   colorGreen,
+	"yellow":  colorYellow,
+	"red":     colorRed,
+	"magenta": colorMagenta,
+	"gray":    colorGray,
+}
 
 // StatusData holds all the data available for template rendering.
 type StatusData struct {
+	Prefix       string // User-provided prefix text
+	PrefixColor  string // ANSI color code for prefix (from --prefix-color flag)
 	Model        string // Model display name (e.g., "Claude")
 	Dir          string // Current directory basename
 	GitBranch    string // Current git branch (empty if not in git repo)
@@ -57,18 +71,34 @@ type StatusData struct {
 	ContextLengthRaw int64   // Raw context length
 	ContextPctRaw    float64 // Raw context percentage
 	ContextPctUseRaw float64 // Raw usable context percentage
+
+	// Beads stats (formatted)
+	BeadsOpen       string // "3 open" or empty if 0
+	BeadsReady      string // "2 ready" or empty if 0
+	BeadsInProgress string // "1 wip" or empty if 0
+	BeadsBlocked    string // "1 blocked" or empty if 0
+	BeadsNextTask   string // Title of next ready task, or empty if none
+
+	// Beads stats (raw values for conditionals)
+	BeadsTotalRaw      int  // Total issues
+	BeadsOpenRaw       int  // Open issues
+	BeadsReadyRaw      int  // Ready to work issues
+	BeadsInProgressRaw int  // In progress issues
+	BeadsBlockedRaw    int  // Blocked issues
+	HasBeads           bool // Whether beads system is available
 }
 
 // funcs is the template function map with color helpers.
 var funcs = template.FuncMap{
-	"cyan":   func() string { return colorCyan },
-	"blue":   func() string { return colorBlue },
-	"green":  func() string { return colorGreen },
-	"yellow": func() string { return colorYellow },
-	"red":    func() string { return colorRed },
-	"gray":   func() string { return colorGray },
-	"reset":  func() string { return colorReset },
-	"bold":   func() string { return colorBold },
+	"cyan":    func() string { return colorCyan },
+	"blue":    func() string { return colorBlue },
+	"green":   func() string { return colorGreen },
+	"yellow":  func() string { return colorYellow },
+	"red":     func() string { return colorRed },
+	"magenta": func() string { return colorMagenta },
+	"gray":    func() string { return colorGray },
+	"reset":   func() string { return colorReset },
+	"bold":    func() string { return colorBold },
 
 	// Context percentage color: green < 50%, yellow 50-80%, red > 80%
 	"ctxColor": func(pct float64) string {

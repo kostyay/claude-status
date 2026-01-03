@@ -221,6 +221,103 @@ func TestRender_ComplexTemplate(t *testing.T) {
 	}
 }
 
+func TestRender_PrefixField(t *testing.T) {
+	tmpl := `{{if .Prefix}}{{.Prefix}} | {{end}}[{{.Model}}]`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	// Test with prefix
+	data := StatusData{
+		Prefix: "WORK",
+		Model:  "Claude",
+	}
+
+	result, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	expected := "WORK | [Claude]"
+	if result != expected {
+		t.Errorf("Render() = %q, want %q", result, expected)
+	}
+}
+
+func TestRender_EmptyPrefix(t *testing.T) {
+	tmpl := `{{if .Prefix}}{{.Prefix}} | {{end}}[{{.Model}}]`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	// Test without prefix
+	data := StatusData{
+		Prefix: "",
+		Model:  "Claude",
+	}
+
+	result, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	// Should not have prefix separator
+	expected := "[Claude]"
+	if result != expected {
+		t.Errorf("Render() = %q, want %q", result, expected)
+	}
+}
+
+func TestRender_PrefixColor(t *testing.T) {
+	// Test that PrefixColor field applies the color directly
+	tmpl := `{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}[{{.Model}}]`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	data := StatusData{
+		Prefix:      "WORK",
+		PrefixColor: ColorMap["red"],
+		Model:       "Claude",
+	}
+
+	result, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	// Should have the red color code
+	if !strings.Contains(result, "\033[31m") {
+		t.Errorf("Missing red color code, got: %q", result)
+	}
+	if !strings.Contains(result, "WORK") {
+		t.Error("Missing WORK text in prefix")
+	}
+	if !strings.Contains(result, "[Claude]") {
+		t.Error("Missing model name")
+	}
+}
+
+func TestColorMap(t *testing.T) {
+	// Verify ColorMap contains expected colors
+	expectedColors := []string{"cyan", "blue", "green", "yellow", "red", "magenta", "gray"}
+	for _, name := range expectedColors {
+		if _, ok := ColorMap[name]; !ok {
+			t.Errorf("ColorMap missing color: %s", name)
+		}
+	}
+
+	// Verify colors are ANSI codes
+	for name, code := range ColorMap {
+		if !strings.HasPrefix(code, "\033[") {
+			t.Errorf("ColorMap[%s] = %q, want ANSI code starting with \\033[", name, code)
+		}
+	}
+}
+
 func TestCtxColorFunction(t *testing.T) {
 	tests := []struct {
 		name       string
