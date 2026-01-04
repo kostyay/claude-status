@@ -1,7 +1,7 @@
 package status
 
 import (
-	"fmt"
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"time"
@@ -83,7 +83,7 @@ type Builder struct {
 }
 
 // ErrNilConfig is returned when a nil config is provided to NewBuilder.
-var ErrNilConfig = fmt.Errorf("config cannot be nil")
+var ErrNilConfig = errors.New("config cannot be nil")
 
 // NewBuilder creates a new status builder.
 func NewBuilder(cfg *config.Config, workDir string) (*Builder, error) {
@@ -198,54 +198,25 @@ func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) {
 	// Get context config based on model
 	ctxCfg := tokens.GetContextConfig(input.Model.ID)
 
-	// Calculate percentages
-	ctxPct := metrics.ContextPercentage(ctxCfg)
-	ctxPctUsable := metrics.ContextPercentageUsable(ctxCfg)
-
-	// Populate formatted values
-	data.TokensInput = tokens.FormatTokens(metrics.InputTokens)
-	data.TokensOutput = tokens.FormatTokens(metrics.OutputTokens)
-	data.TokensCached = tokens.FormatTokens(metrics.CachedTokens)
-	data.TokensTotal = tokens.FormatTokens(metrics.TotalTokens)
-	data.ContextLength = tokens.FormatTokens(metrics.ContextLength)
-	data.ContextPct = fmt.Sprintf("%.1f%%", ctxPct)
-	data.ContextPctUse = fmt.Sprintf("%.1f%%", ctxPctUsable)
-
-	// Populate raw values
-	data.TokensInputRaw = metrics.InputTokens
-	data.TokensOutputRaw = metrics.OutputTokens
-	data.TokensCachedRaw = metrics.CachedTokens
-	data.TokensTotalRaw = metrics.TotalTokens
-	data.ContextLengthRaw = metrics.ContextLength
-	data.ContextPctRaw = ctxPct
-	data.ContextPctUseRaw = ctxPctUsable
+	// Populate raw values (formatting is done in templates via fmtTokens/fmtPct)
+	data.TokensInput = metrics.InputTokens
+	data.TokensOutput = metrics.OutputTokens
+	data.TokensCached = metrics.CachedTokens
+	data.TokensTotal = metrics.TotalTokens
+	data.ContextLength = metrics.ContextLength
+	data.ContextPct = metrics.ContextPercentage(ctxCfg)
+	data.ContextPctUse = metrics.ContextPercentageUsable(ctxCfg)
 }
 
 // populateDiffStats populates git diff statistics into StatusData.
 func (b *Builder) populateDiffStats(data *template.StatusData, stats git.DiffStats) {
-	// Raw values
-	data.GitAdditionsRaw = stats.Additions
-	data.GitDeletionsRaw = stats.Deletions
-	data.GitNewFilesRaw = stats.NewFiles
-	data.GitModifiedFilesRaw = stats.ModifiedFiles
-	data.GitDeletedFilesRaw = stats.DeletedFiles
-
-	// Formatted values (only if non-zero)
-	if stats.Additions > 0 {
-		data.GitAdditions = fmt.Sprintf("+%d", stats.Additions)
-	}
-	if stats.Deletions > 0 {
-		data.GitDeletions = fmt.Sprintf("-%d", stats.Deletions)
-	}
-	if stats.NewFiles > 0 {
-		data.GitNewFiles = fmt.Sprintf("✨%d", stats.NewFiles)
-	}
-	if stats.ModifiedFiles > 0 {
-		data.GitModifiedFiles = fmt.Sprintf("📝%d", stats.ModifiedFiles)
-	}
-	if stats.DeletedFiles > 0 {
-		data.GitDeletedFiles = fmt.Sprintf("🗑%d", stats.DeletedFiles)
-	}
+	// Raw values only (formatting is done in templates via fmtSigned)
+	data.GitAdditions = stats.Additions
+	data.GitDeletions = stats.Deletions
+	data.GitNewFiles = stats.NewFiles
+	data.GitModifiedFiles = stats.ModifiedFiles
+	data.GitDeletedFiles = stats.DeletedFiles
+	data.GitUnstagedFiles = stats.UnstagedFiles
 }
 
 func (b *Builder) fetchGitHubStatus(data *template.StatusData, branch string) {
@@ -331,24 +302,10 @@ func (b *Builder) fetchBeadsStats(data *template.StatusData) {
 func (b *Builder) populateBeadsStats(data *template.StatusData, stats beads.Stats) {
 	data.HasBeads = true
 
-	// Raw values
-	data.BeadsTotalRaw = stats.TotalIssues
-	data.BeadsOpenRaw = stats.OpenIssues
-	data.BeadsReadyRaw = stats.ReadyIssues
-	data.BeadsInProgressRaw = stats.InProgressIssues
-	data.BeadsBlockedRaw = stats.BlockedIssues
-
-	// Formatted values (only if non-zero)
-	if stats.OpenIssues > 0 {
-		data.BeadsOpen = fmt.Sprintf("%d open", stats.OpenIssues)
-	}
-	if stats.ReadyIssues > 0 {
-		data.BeadsReady = fmt.Sprintf("%d ready", stats.ReadyIssues)
-	}
-	if stats.InProgressIssues > 0 {
-		data.BeadsInProgress = fmt.Sprintf("%d wip", stats.InProgressIssues)
-	}
-	if stats.BlockedIssues > 0 {
-		data.BeadsBlocked = fmt.Sprintf("%d blocked", stats.BlockedIssues)
-	}
+	// Raw values only (formatting is done in templates)
+	data.BeadsTotal = stats.TotalIssues
+	data.BeadsOpen = stats.OpenIssues
+	data.BeadsReady = stats.ReadyIssues
+	data.BeadsInProgress = stats.InProgressIssues
+	data.BeadsBlocked = stats.BlockedIssues
 }

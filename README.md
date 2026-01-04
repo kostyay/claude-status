@@ -103,7 +103,7 @@ CLAUDE_CONFIG_DIR=/custom/path ./claude-status -install
 | **Git Branch** | Current branch name | `🌿 main` |
 | **Git Status** | Uncommitted changes count | `±3` |
 | **Git Diff** | Line additions/deletions | `+42,-10` |
-| **Git Files** | New/modified/deleted files | `✨2📝1🗑1` |
+| **Git Files** | New/modified/deleted/unstaged files | `✨2📝1🗑1⚡3` |
 | **GitHub CI** | Latest workflow run status | `✅` `❌` `🔄` |
 | **Context %** | Usable context usage before auto-compact (color-coded) | `📊 56.5%` |
 | **Version** | Claude Code version | `v1.0.0` |
@@ -111,15 +111,17 @@ CLAUDE_CONFIG_DIR=/custom/path ./claude-status -install
 
 ### Token Metrics (Available in Templates)
 
-| Metric | Description | Example |
-|--------|-------------|---------|
-| **Tokens Input** | Input tokens used | `10.5k` |
-| **Tokens Output** | Output tokens generated | `5.2k` |
-| **Tokens Cached** | Cached tokens (read + creation) | `35k` |
-| **Tokens Total** | Sum of all tokens | `50.7k` |
-| **Context Length** | Current context window size | `45.2k` |
-| **Context % (Usable)** | Percentage of usable context (80% before auto-compact) - **default** | `56.5%` |
-| **Context %** | Percentage of max context used (for custom templates) | `45.2%` |
+All values are raw numbers. Use `fmtTokens` and `fmtPct` template functions to format them.
+
+| Metric | Description | Example (with formatting) |
+|--------|-------------|---------------------------|
+| **TokensInput** | Input tokens used | `{{fmtTokens .TokensInput}}` → `10.5k` |
+| **TokensOutput** | Output tokens generated | `{{fmtTokens .TokensOutput}}` → `5.2k` |
+| **TokensCached** | Cached tokens (read + creation) | `{{fmtTokens .TokensCached}}` → `35k` |
+| **TokensTotal** | Sum of all tokens | `{{fmtTokens .TokensTotal}}` → `50.7k` |
+| **ContextLength** | Current context window size | `{{fmtTokens .ContextLength}}` → `45.2k` |
+| **ContextPctUse** | Percentage of usable context (80% before auto-compact) - **default** | `{{fmtPct .ContextPctUse}}` → `56.5%` |
+| **ContextPct** | Percentage of max context used | `{{fmtPct .ContextPct}}` → `45.2%` |
 
 ### GitHub CI Status Icons
 
@@ -171,8 +173,8 @@ Create `~/.config/claude-status/config.json`:
 The default template shows a complete status line with prefix support, git diff stats, and a second line for task tracking (if beads is configured):
 
 ```
-{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditionsRaw .GitDeletionsRaw}} {{green}}{{.GitAdditions}}{{reset}},{{red}}{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFilesRaw .GitModifiedFilesRaw .GitDeletedFilesRaw}} {{.GitNewFiles}}{{.GitModifiedFiles}}{{.GitDeletedFiles}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .BeadsReady}}
-{{yellow}}📋 Tasks: {{.BeadsReady}}{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}}{{reset}}{{end}}{{if .BeadsNextTask}}. Next Up: {{.BeadsNextTask}}{{end}}{{end}}
+{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .BeadsReady}}
+{{yellow}}📋 Tasks: {{.BeadsReady}} ready{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}} blocked{{reset}}{{end}}{{if .BeadsNextTask}}. Next Up: {{.BeadsNextTask}}{{end}}{{end}}
 ```
 
 Features:
@@ -185,6 +187,8 @@ Features:
 
 ### Available Fields
 
+All values are raw numbers. Use template functions (`fmtTokens`, `fmtPct`, `fmtSigned`) for formatting.
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `.Prefix` | string | Profile prefix (from `--prefix` flag) |
@@ -193,43 +197,36 @@ Features:
 | `.Dir` | string | Current directory basename |
 | `.GitBranch` | string | Current git branch (empty if not in repo) |
 | `.GitStatus` | string | Change indicator like "±3" (empty if clean) |
-| `.GitAdditions` | string | Line additions (e.g., "+42", empty if 0) |
-| `.GitDeletions` | string | Line deletions (e.g., "-10", empty if 0) |
-| `.GitNewFiles` | string | New files count (e.g., "✨2", empty if 0) |
-| `.GitModifiedFiles` | string | Modified files count (e.g., "📝1", empty if 0) |
-| `.GitDeletedFiles` | string | Deleted files count (e.g., "🗑1", empty if 0) |
-| `.GitAdditionsRaw` | int | Raw additions count (for conditionals) |
-| `.GitDeletionsRaw` | int | Raw deletions count |
-| `.GitNewFilesRaw` | int | Raw new files count |
-| `.GitModifiedFilesRaw` | int | Raw modified files count |
-| `.GitDeletedFilesRaw` | int | Raw deleted files count |
+| `.GitAdditions` | int | Line additions count |
+| `.GitDeletions` | int | Line deletions count |
+| `.GitNewFiles` | int | New files count |
+| `.GitModifiedFiles` | int | Modified files count |
+| `.GitDeletedFiles` | int | Deleted files count |
+| `.GitUnstagedFiles` | int | Unstaged files count |
 | `.GitHubStatus` | string | CI status emoji (empty if unavailable) |
 | `.Version` | string | Claude Code version |
-| `.TokensInput` | string | Input tokens (formatted, e.g., "10.5k") |
-| `.TokensOutput` | string | Output tokens (formatted) |
-| `.TokensCached` | string | Cached tokens (formatted) |
-| `.TokensTotal` | string | Total tokens (formatted) |
-| `.ContextLength` | string | Context length (formatted) |
-| `.ContextPctUse` | string | Usable context percentage - **used in default template** |
-| `.ContextPct` | string | Context percentage of max tokens (for custom templates) |
-| `.TokensInputRaw` | int64 | Raw input tokens (for conditionals) |
-| `.TokensOutputRaw` | int64 | Raw output tokens |
-| `.TokensCachedRaw` | int64 | Raw cached tokens |
-| `.TokensTotalRaw` | int64 | Raw total tokens |
-| `.ContextLengthRaw` | int64 | Raw context length |
-| `.ContextPctUseRaw` | float64 | Raw usable context percentage (for `ctxColor`) - **used in default template** |
-| `.ContextPctRaw` | float64 | Raw context percentage of max tokens |
-| `.BeadsOpen` | string | Open issues (e.g., "3 open", empty if 0) |
-| `.BeadsReady` | string | Ready issues (e.g., "2 ready", empty if 0) |
-| `.BeadsInProgress` | string | In-progress issues (e.g., "1 wip", empty if 0) |
-| `.BeadsBlocked` | string | Blocked issues (e.g., "1 blocked", empty if 0) |
+| `.TokensInput` | int64 | Input tokens |
+| `.TokensOutput` | int64 | Output tokens |
+| `.TokensCached` | int64 | Cached tokens |
+| `.TokensTotal` | int64 | Total tokens |
+| `.ContextLength` | int64 | Context length |
+| `.ContextPct` | float64 | Context percentage of max tokens (0-100) |
+| `.ContextPctUse` | float64 | Usable context percentage (0-100) - **used in default template** |
+| `.BeadsTotal` | int | Total issues count |
+| `.BeadsOpen` | int | Open issues count |
+| `.BeadsReady` | int | Ready issues count |
+| `.BeadsInProgress` | int | In-progress count |
+| `.BeadsBlocked` | int | Blocked count |
 | `.BeadsNextTask` | string | Title of next ready task (empty if none) |
-| `.BeadsTotalRaw` | int | Raw total issues count |
-| `.BeadsOpenRaw` | int | Raw open issues count |
-| `.BeadsReadyRaw` | int | Raw ready issues count |
-| `.BeadsInProgressRaw` | int | Raw in-progress count |
-| `.BeadsBlockedRaw` | int | Raw blocked count |
 | `.HasBeads` | bool | Whether beads system is available |
+
+### Template Functions
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `{{fmtTokens .TokensInput}}` | Format token count (e.g., 10500 → "10.5k") | `{{fmtTokens .TokensTotal}}` |
+| `{{fmtPct .ContextPctUse}}` | Format percentage (e.g., 45.2 → "45.2%") | `{{fmtPct .ContextPct}}` |
+| `{{fmtSigned .GitAdditions}}` | Format with +/- prefix (e.g., 42 → "+42") | `{{fmtSigned .GitAdditions}}` |
 
 ### Color Functions
 
@@ -244,7 +241,7 @@ Features:
 | `{{gray}}` | Gray color |
 | `{{bold}}` | Bold text |
 | `{{reset}}` | Reset formatting |
-| `{{ctxColor .ContextPctUseRaw}}` | Dynamic color based on usable context: green (<50%), yellow (50-80%), red (>80%) |
+| `{{ctxColor .ContextPctUse}}` | Dynamic color based on usable context: green (<50%), yellow (50-80%), red (>80%) |
 
 ### Example Templates
 
@@ -265,22 +262,22 @@ Features:
 
 **With full token metrics:**
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{.TokensInput}} Out:{{.TokensOutput}} Cache:{{.TokensCached}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}📊 {{.ContextPctUse}}{{reset}}{{end}}
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{fmtTokens .TokensInput}} Out:{{fmtTokens .TokensOutput}} Cache:{{fmtTokens .TokensCached}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}
 ```
 
 **Context-focused (shows usable context percentage):**
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{.Dir}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUseRaw}}Ctx: {{.ContextLength}} ({{.ContextPctUse}}){{reset}}{{end}}
+{{cyan}}[{{.Model}}]{{reset}} | {{.Dir}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}Ctx: {{fmtTokens .ContextLength}} ({{fmtPct .ContextPctUse}}){{reset}}{{end}}
 ```
 
 **With git diff stats:**
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{reset}}{{if or .GitAdditionsRaw .GitDeletionsRaw}} {{green}}{{.GitAdditions}}{{reset}},{{red}}{{.GitDeletions}}{{reset}}{{end}}{{end}}
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{end}}
 ```
 
 **Task-focused (for beads users):**
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .BeadsReady}} | {{yellow}}📋 {{.BeadsReady}}{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}}{{reset}}{{end}}{{end}}
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .BeadsReady}} | {{yellow}}📋 {{.BeadsReady}} ready{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}} blocked{{reset}}{{end}}{{end}}
 ```
 
 ## GitHub Integration

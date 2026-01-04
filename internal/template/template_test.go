@@ -337,13 +337,13 @@ func TestCtxColorFunction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpl := `{{ctxColor .ContextPctRaw}}`
+			tmpl := `{{ctxColor .ContextPct}}`
 			engine, err := NewEngine(tmpl)
 			if err != nil {
 				t.Fatalf("NewEngine() error = %v", err)
 			}
 
-			data := StatusData{ContextPctRaw: tt.percentage}
+			data := StatusData{ContextPct: tt.percentage}
 			result, err := engine.Render(data)
 			if err != nil {
 				t.Fatalf("Render() error = %v", err)
@@ -358,15 +358,14 @@ func TestCtxColorFunction(t *testing.T) {
 
 func TestRender_ContextPercentageWithColor(t *testing.T) {
 	// Test a template using ctxColor with context percentage
-	tmpl := `{{ctxColor .ContextPctRaw}}📊 {{.ContextPct}}{{reset}}`
+	tmpl := `{{ctxColor .ContextPct}}📊 {{fmtPct .ContextPct}}{{reset}}`
 	engine, err := NewEngine(tmpl)
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 
 	data := StatusData{
-		ContextPct:    "75.0%",
-		ContextPctRaw: 75.0,
+		ContextPct: 75.0,
 	}
 
 	result, err := engine.Render(data)

@@ -466,37 +466,23 @@ func TestBuild_TokenMetrics(t *testing.T) {
 
 	data := builder.Build(input)
 
-	// Check token metrics are populated
-	if data.TokensInput != "10k" {
-		t.Errorf("TokensInput = %q, want %q", data.TokensInput, "10k")
+	// Check token metrics are populated (raw values)
+	if data.TokensInput != 10000 {
+		t.Errorf("TokensInput = %d, want %d", data.TokensInput, 10000)
 	}
-	if data.TokensOutput != "5k" {
-		t.Errorf("TokensOutput = %q, want %q", data.TokensOutput, "5k")
+	if data.TokensOutput != 5000 {
+		t.Errorf("TokensOutput = %d, want %d", data.TokensOutput, 5000)
 	}
-	if data.TokensCached != "35k" {
-		t.Errorf("TokensCached = %q, want %q", data.TokensCached, "35k")
+	if data.TokensCached != 35000 {
+		t.Errorf("TokensCached = %d, want %d", data.TokensCached, 35000)
 	}
-	if data.TokensTotal != "50k" {
-		t.Errorf("TokensTotal = %q, want %q", data.TokensTotal, "50k")
-	}
-
-	// Check raw values
-	if data.TokensInputRaw != 10000 {
-		t.Errorf("TokensInputRaw = %d, want %d", data.TokensInputRaw, 10000)
-	}
-	if data.TokensOutputRaw != 5000 {
-		t.Errorf("TokensOutputRaw = %d, want %d", data.TokensOutputRaw, 5000)
-	}
-	if data.TokensCachedRaw != 35000 {
-		t.Errorf("TokensCachedRaw = %d, want %d", data.TokensCachedRaw, 35000)
-	}
-	if data.TokensTotalRaw != 50000 {
-		t.Errorf("TokensTotalRaw = %d, want %d", data.TokensTotalRaw, 50000)
+	if data.TokensTotal != 50000 {
+		t.Errorf("TokensTotal = %d, want %d", data.TokensTotal, 50000)
 	}
 
 	// Check context percentage is calculated
-	if data.ContextPctRaw == 0 {
-		t.Error("ContextPctRaw should not be zero")
+	if data.ContextPct == 0 {
+		t.Error("ContextPct should not be zero")
 	}
 }
 
@@ -514,12 +500,9 @@ func TestBuild_TokenMetrics_EmptyPath(t *testing.T) {
 
 	data := builder.Build(input)
 
-	// Token metrics should be empty/zero
-	if data.TokensInput != "" {
-		t.Errorf("TokensInput = %q, want empty", data.TokensInput)
-	}
-	if data.TokensInputRaw != 0 {
-		t.Errorf("TokensInputRaw = %d, want 0", data.TokensInputRaw)
+	// Token metrics should be zero
+	if data.TokensInput != 0 {
+		t.Errorf("TokensInput = %d, want 0", data.TokensInput)
 	}
 }
 
@@ -537,12 +520,9 @@ func TestBuild_TokenMetrics_InvalidPath(t *testing.T) {
 
 	data := builder.Build(input)
 
-	// Token metrics should be empty/zero (silent fail)
-	if data.TokensInput != "" {
-		t.Errorf("TokensInput = %q, want empty", data.TokensInput)
-	}
-	if data.TokensInputRaw != 0 {
-		t.Errorf("TokensInputRaw = %d, want 0", data.TokensInputRaw)
+	// Token metrics should be zero (silent fail)
+	if data.TokensInput != 0 {
+		t.Errorf("TokensInput = %d, want 0", data.TokensInput)
 	}
 }
 
@@ -577,38 +557,24 @@ func TestBuild_BeadsStats(t *testing.T) {
 
 	data := builder.Build(input)
 
-	// Check beads stats are populated
+	// Check beads stats are populated (raw values)
 	if !data.HasBeads {
 		t.Error("HasBeads should be true")
 	}
-	if data.BeadsTotalRaw != 10 {
-		t.Errorf("BeadsTotalRaw = %d, want %d", data.BeadsTotalRaw, 10)
+	if data.BeadsTotal != 10 {
+		t.Errorf("BeadsTotal = %d, want %d", data.BeadsTotal, 10)
 	}
-	if data.BeadsOpenRaw != 5 {
-		t.Errorf("BeadsOpenRaw = %d, want %d", data.BeadsOpenRaw, 5)
+	if data.BeadsOpen != 5 {
+		t.Errorf("BeadsOpen = %d, want %d", data.BeadsOpen, 5)
 	}
-	if data.BeadsReadyRaw != 3 {
-		t.Errorf("BeadsReadyRaw = %d, want %d", data.BeadsReadyRaw, 3)
+	if data.BeadsReady != 3 {
+		t.Errorf("BeadsReady = %d, want %d", data.BeadsReady, 3)
 	}
-	if data.BeadsInProgressRaw != 2 {
-		t.Errorf("BeadsInProgressRaw = %d, want %d", data.BeadsInProgressRaw, 2)
+	if data.BeadsInProgress != 2 {
+		t.Errorf("BeadsInProgress = %d, want %d", data.BeadsInProgress, 2)
 	}
-	if data.BeadsBlockedRaw != 1 {
-		t.Errorf("BeadsBlockedRaw = %d, want %d", data.BeadsBlockedRaw, 1)
-	}
-
-	// Check formatted values
-	if data.BeadsOpen != "5 open" {
-		t.Errorf("BeadsOpen = %q, want %q", data.BeadsOpen, "5 open")
-	}
-	if data.BeadsReady != "3 ready" {
-		t.Errorf("BeadsReady = %q, want %q", data.BeadsReady, "3 ready")
-	}
-	if data.BeadsInProgress != "2 wip" {
-		t.Errorf("BeadsInProgress = %q, want %q", data.BeadsInProgress, "2 wip")
-	}
-	if data.BeadsBlocked != "1 blocked" {
-		t.Errorf("BeadsBlocked = %q, want %q", data.BeadsBlocked, "1 blocked")
+	if data.BeadsBlocked != 1 {
+		t.Errorf("BeadsBlocked = %d, want %d", data.BeadsBlocked, 1)
 	}
 }
 
@@ -629,11 +595,8 @@ func TestBuild_NoBeads(t *testing.T) {
 	if data.HasBeads {
 		t.Error("HasBeads should be false when beads provider is nil")
 	}
-	if data.BeadsOpenRaw != 0 {
-		t.Errorf("BeadsOpenRaw = %d, want 0", data.BeadsOpenRaw)
-	}
-	if data.BeadsOpen != "" {
-		t.Errorf("BeadsOpen = %q, want empty", data.BeadsOpen)
+	if data.BeadsOpen != 0 {
+		t.Errorf("BeadsOpen = %d, want 0", data.BeadsOpen)
 	}
 }
 
@@ -730,17 +693,17 @@ func TestBuild_BeadsZeroValues(t *testing.T) {
 		t.Error("HasBeads should be true even with zero stats")
 	}
 
-	// Formatted values should be empty for zero values
-	if data.BeadsOpen != "" {
-		t.Errorf("BeadsOpen = %q, want empty for zero", data.BeadsOpen)
+	// Values should be zero
+	if data.BeadsOpen != 0 {
+		t.Errorf("BeadsOpen = %d, want 0", data.BeadsOpen)
 	}
-	if data.BeadsReady != "" {
-		t.Errorf("BeadsReady = %q, want empty for zero", data.BeadsReady)
+	if data.BeadsReady != 0 {
+		t.Errorf("BeadsReady = %d, want 0", data.BeadsReady)
 	}
-	if data.BeadsInProgress != "" {
-		t.Errorf("BeadsInProgress = %q, want empty for zero", data.BeadsInProgress)
+	if data.BeadsInProgress != 0 {
+		t.Errorf("BeadsInProgress = %d, want 0", data.BeadsInProgress)
 	}
-	if data.BeadsBlocked != "" {
-		t.Errorf("BeadsBlocked = %q, want empty for zero", data.BeadsBlocked)
+	if data.BeadsBlocked != 0 {
+		t.Errorf("BeadsBlocked = %d, want 0", data.BeadsBlocked)
 	}
 }
