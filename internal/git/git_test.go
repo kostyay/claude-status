@@ -444,72 +444,73 @@ func TestParseShortstat(t *testing.T) {
 
 func TestParseStatusForTypes(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		wantNew int
-		wantMod int
-		wantDel int
+		name         string
+		input        string
+		wantNew      int
+		wantMod      int
+		wantDel      int
+		wantUnstaged int
 	}{
 		{
-			name:    "empty",
-			input:   "",
-			wantNew: 0, wantMod: 0, wantDel: 0,
+			name:         "empty",
+			input:        "",
+			wantNew:      0, wantMod: 0, wantDel: 0, wantUnstaged: 0,
 		},
 		{
-			name:    "untracked files",
-			input:   "?? file1.go\n?? file2.go",
-			wantNew: 2, wantMod: 0, wantDel: 0,
+			name:         "untracked files",
+			input:        "?? file1.go\n?? file2.go",
+			wantNew:      2, wantMod: 0, wantDel: 0, wantUnstaged: 2,
 		},
 		{
-			name:    "staged new file",
-			input:   "A  file1.go",
-			wantNew: 1, wantMod: 0, wantDel: 0,
+			name:         "staged new file",
+			input:        "A  file1.go",
+			wantNew:      1, wantMod: 0, wantDel: 0, wantUnstaged: 0,
 		},
 		{
-			name:    "modified unstaged",
-			input:   " M file1.go",
-			wantNew: 0, wantMod: 1, wantDel: 0,
+			name:         "modified unstaged",
+			input:        " M file1.go",
+			wantNew:      0, wantMod: 1, wantDel: 0, wantUnstaged: 1,
 		},
 		{
-			name:    "modified staged",
-			input:   "M  file1.go",
-			wantNew: 0, wantMod: 1, wantDel: 0,
+			name:         "modified staged",
+			input:        "M  file1.go",
+			wantNew:      0, wantMod: 1, wantDel: 0, wantUnstaged: 0,
 		},
 		{
-			name:    "modified both",
-			input:   "MM file1.go",
-			wantNew: 0, wantMod: 1, wantDel: 0,
+			name:         "modified both",
+			input:        "MM file1.go",
+			wantNew:      0, wantMod: 1, wantDel: 0, wantUnstaged: 1,
 		},
 		{
-			name:    "deleted staged",
-			input:   "D  file1.go",
-			wantNew: 0, wantMod: 0, wantDel: 1,
+			name:         "deleted staged",
+			input:        "D  file1.go",
+			wantNew:      0, wantMod: 0, wantDel: 1, wantUnstaged: 0,
 		},
 		{
-			name:    "deleted unstaged",
-			input:   " D file1.go",
-			wantNew: 0, wantMod: 0, wantDel: 1,
+			name:         "deleted unstaged",
+			input:        " D file1.go",
+			wantNew:      0, wantMod: 0, wantDel: 1, wantUnstaged: 1,
 		},
 		{
-			name:    "renamed",
-			input:   "R  old.go -> new.go",
-			wantNew: 0, wantMod: 1, wantDel: 0,
+			name:         "renamed",
+			input:        "R  old.go -> new.go",
+			wantNew:      0, wantMod: 1, wantDel: 0, wantUnstaged: 0,
 		},
 		{
-			name:    "copied",
-			input:   "C  src.go -> dst.go",
-			wantNew: 0, wantMod: 1, wantDel: 0,
+			name:         "copied",
+			input:        "C  src.go -> dst.go",
+			wantNew:      0, wantMod: 1, wantDel: 0, wantUnstaged: 0,
 		},
 		{
-			name:    "mixed",
-			input:   "?? new1.go\n?? new2.go\nA  added.go\nM  modified.go\n M unstaged.go\nD  deleted.go",
-			wantNew: 3, wantMod: 2, wantDel: 1,
+			name:         "mixed",
+			input:        "?? new1.go\n?? new2.go\nA  added.go\nM  modified.go\n M unstaged.go\nD  deleted.go",
+			wantNew:      3, wantMod: 2, wantDel: 1, wantUnstaged: 3, // 2 untracked + 1 unstaged mod
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotNew, gotMod, gotDel := parseStatusForTypes(tt.input)
+			gotNew, gotMod, gotDel, gotUnstaged := parseStatusForTypes(tt.input)
 			if gotNew != tt.wantNew {
 				t.Errorf("new = %d, want %d", gotNew, tt.wantNew)
 			}
@@ -518,6 +519,9 @@ func TestParseStatusForTypes(t *testing.T) {
 			}
 			if gotDel != tt.wantDel {
 				t.Errorf("deleted = %d, want %d", gotDel, tt.wantDel)
+			}
+			if gotUnstaged != tt.wantUnstaged {
+				t.Errorf("unstaged = %d, want %d", gotUnstaged, tt.wantUnstaged)
 			}
 		})
 	}

@@ -30,11 +30,12 @@ func (e *ExecCommander) Run(ctx context.Context, dir string, args ...string) (st
 
 // DiffStats holds git diff statistics.
 type DiffStats struct {
-	Additions     int // Lines added
-	Deletions     int // Lines deleted
-	NewFiles      int // Untracked or newly staged files
-	ModifiedFiles int // Modified files
-	DeletedFiles  int // Deleted files
+	Additions      int // Lines added
+	Deletions      int // Lines deleted
+	NewFiles       int // Untracked or newly staged files
+	ModifiedFiles  int // Modified files
+	DeletedFiles   int // Deleted files
+	UnstagedFiles  int // Files with unstaged changes (need git add)
 }
 
 // Client provides git operations for a working directory.
@@ -140,7 +141,7 @@ func (c *Client) DiffStats() (DiffStats, error) {
 	if err != nil {
 		return stats, err
 	}
-	stats.NewFiles, stats.ModifiedFiles, stats.DeletedFiles = parseStatusForTypes(statusOut)
+	stats.NewFiles, stats.ModifiedFiles, stats.DeletedFiles, stats.UnstagedFiles = parseStatusForTypes(statusOut)
 
 	return stats, nil
 }
@@ -176,10 +177,11 @@ func parseShortstat(output string) (additions, deletions int) {
 }
 
 // parseStatusForTypes parses "git status --porcelain" output for file type counts.
-// Returns (new, modified, deleted) counts.
-func parseStatusForTypes(output string) (newFiles, modified, deleted int) {
+// Returns (new, modified, deleted, unstaged) counts.
+// Unstaged = files that need "git add" (untracked, unstaged modifications, unstaged deletions).
+func parseStatusForTypes(output string) (newFiles, modified, deleted, unstaged int) {
 	if output == "" {
-		return 0, 0, 0
+		return 0, 0, 0, 0
 	}
 
 	for _, line := range strings.Split(output, "\n") {
@@ -194,19 +196,26 @@ func parseStatusForTypes(output string) (newFiles, modified, deleted int) {
 		case x == '?' && y == '?':
 			// Untracked file (new)
 			newFiles++
+			unstaged++ // Untracked files need git add
 		case x == 'A':
 			// Staged new file
 			newFiles++
 		case x == 'D' || y == 'D':
 			// Deleted file
 			deleted++
+			if y == 'D' {
+				unstaged++ // Unstaged deletion needs git add
+			}
 		case x == 'M' || y == 'M' || x == 'R' || x == 'C':
 			// Modified, renamed, or copied
 			modified++
+			if y == 'M' {
+				unstaged++ // Unstaged modification needs git add
+			}
 		}
 	}
 
-	return newFiles, modified, deleted
+	return newFiles, modified, deleted, unstaged
 }
 
 // HeadPath returns the path to the HEAD file for cache invalidation.
