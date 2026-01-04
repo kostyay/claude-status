@@ -249,35 +249,56 @@ All values are raw numbers. Use template functions (`fmtTokens`, `fmtPct`, `fmtS
 ```
 {{.Model}} {{.Dir}}{{if .GitBranch}} ({{.GitBranch}}){{end}}
 ```
+```
+Sonnet 4 my-project (main)
+```
 
 **With colors, no emojis:**
 ```
 {{cyan}}{{.Model}}{{reset}} {{blue}}{{.Dir}}{{reset}}{{if .GitBranch}} {{green}}{{.GitBranch}}{{reset}}{{if .GitStatus}} {{yellow}}{{.GitStatus}}{{reset}}{{end}}{{end}}
+```
+```
+Sonnet 4 my-project main ±3
 ```
 
 **Branch-focused:**
 ```
 {{if .GitBranch}}{{green}}{{.GitBranch}}{{reset}}{{if .GitStatus}} {{red}}{{.GitStatus}}{{reset}}{{end}} {{.GitHubStatus}}{{else}}{{gray}}(no git){{reset}}{{end}}
 ```
+```
+feature-branch ±5 ✅
+```
 
 **With full token metrics:**
 ```
 {{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{fmtTokens .TokensInput}} Out:{{fmtTokens .TokensOutput}} Cache:{{fmtTokens .TokensCached}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}
+```
+```
+[Sonnet 4] | 📁 my-project | 🌿 main ±3 | 📈 In:10.5k Out:5.2k Cache:35k | 📊 56.5%
 ```
 
 **Context-focused (shows usable context percentage):**
 ```
 {{cyan}}[{{.Model}}]{{reset}} | {{.Dir}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}Ctx: {{fmtTokens .ContextLength}} ({{fmtPct .ContextPctUse}}){{reset}}{{end}}
 ```
+```
+[Sonnet 4] | my-project | Ctx: 45.2k (56.5%)
+```
 
 **With git diff stats:**
 ```
 {{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{end}}
 ```
+```
+[Sonnet 4] | 📁 my-project | 🌿 main +42,-10
+```
 
 **Task-focused (for beads users):**
 ```
 {{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .BeadsReady}} | {{yellow}}📋 {{.BeadsReady}} ready{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}} blocked{{reset}}{{end}}{{end}}
+```
+```
+[Sonnet 4] | 📁 my-project | 📋 2 ready, 1 blocked
 ```
 
 ## GitHub Integration
