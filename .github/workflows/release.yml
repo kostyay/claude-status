@@ -28,8 +28,11 @@ jobs:
           # Fetch all tags
           git fetch --tags
 
-          # Get latest tag or default to v0.0.0
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          # Get latest tag by version (from ALL tags, not just reachable from HEAD)
+          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v0.0.0"
+          fi
           echo "latest=$LATEST_TAG" >> $GITHUB_OUTPUT
 
           # Parse version components
