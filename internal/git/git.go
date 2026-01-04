@@ -192,25 +192,37 @@ func parseStatusForTypes(output string) (newFiles, modified, deleted, unstaged i
 		// X = staged status, Y = unstaged status
 		x, y := line[0], line[1]
 
-		switch {
-		case x == '?' && y == '?':
-			// Untracked file (new)
-			newFiles++
-			unstaged++ // Untracked files need git add
-		case x == 'A':
+		// Handle based on staged status (X), then check worktree status (Y)
+		switch x {
+		case '?':
+			if y == '?' {
+				newFiles++
+				unstaged++ // Untracked files need git add
+			}
+		case 'A':
 			// Staged new file
 			newFiles++
-		case x == 'D' || y == 'D':
-			// Deleted file
-			deleted++
-			if y == 'D' {
-				unstaged++ // Unstaged deletion needs git add
+			if y == 'M' || y == 'D' {
+				unstaged++ // Staged add with unstaged modification/deletion
 			}
-		case x == 'M' || y == 'M' || x == 'R' || x == 'C':
-			// Modified, renamed, or copied
+		case 'D':
+			// Staged deletion
+			deleted++
+		case 'M', 'R', 'C':
+			// Staged modification, rename, or copy
 			modified++
-			if y == 'M' {
-				unstaged++ // Unstaged modification needs git add
+			if y == 'M' || y == 'D' {
+				unstaged++ // Unstaged modification or deletion
+			}
+		case ' ':
+			// No staged change, check worktree status
+			switch y {
+			case 'M':
+				modified++
+				unstaged++
+			case 'D':
+				deleted++
+				unstaged++
 			}
 		}
 	}

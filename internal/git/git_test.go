@@ -502,6 +502,21 @@ func TestParseStatusForTypes(t *testing.T) {
 			wantNew:      0, wantMod: 1, wantDel: 0, wantUnstaged: 0,
 		},
 		{
+			name:         "renamed with unstaged modification",
+			input:        "RM old.go -> new.go",
+			wantNew:      0, wantMod: 1, wantDel: 0, wantUnstaged: 1,
+		},
+		{
+			name:         "added with unstaged modification",
+			input:        "AM file1.go",
+			wantNew:      1, wantMod: 0, wantDel: 0, wantUnstaged: 1,
+		},
+		{
+			name:         "renamed with unstaged deletion",
+			input:        "RD old.go -> new.go",
+			wantNew:      0, wantMod: 1, wantDel: 0, wantUnstaged: 1,
+		},
+		{
 			name:         "mixed",
 			input:        "?? new1.go\n?? new2.go\nA  added.go\nM  modified.go\n M unstaged.go\nD  deleted.go",
 			wantNew:      3, wantMod: 2, wantDel: 1, wantUnstaged: 3, // 2 untracked + 1 unstaged mod
@@ -563,6 +578,9 @@ func TestDiffStats(t *testing.T) {
 	}
 	if stats.DeletedFiles != 1 {
 		t.Errorf("DeletedFiles = %d, want 1", stats.DeletedFiles)
+	}
+	if stats.UnstagedFiles != 2 {
+		t.Errorf("UnstagedFiles = %d, want 2", stats.UnstagedFiles)
 	}
 }
 
