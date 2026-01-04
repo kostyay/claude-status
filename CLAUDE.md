@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Use 'bd' for task tracking.
 
+*Never* commit to main/master directly, always create a side branch. Code is merged via pull request.
+
 ## Build Commands
 
 ```bash
