@@ -12,6 +12,7 @@ import (
 	"github.com/kostyay/claude-status/internal/git"
 	"github.com/kostyay/claude-status/internal/github"
 	"github.com/kostyay/claude-status/internal/template"
+	"github.com/kostyay/claude-status/internal/tk"
 	"github.com/kostyay/claude-status/internal/tokens"
 )
 
@@ -110,12 +111,19 @@ func NewBuilder(cfg *config.Config, workDir string) (*Builder, error) {
 		slog.Debug("git client initialization skipped", "workDir", workDir, "err", err)
 	}
 
-	// Initialize beads client
-	beadsClient := beads.NewClient(workDir)
-	if beadsClient.HasBeads() {
-		b.beads = beadsClient
+	// Initialize task tracker: tk takes priority over beads
+	tkClient := tk.NewClient(workDir)
+	if tkClient.HasTk() {
+		b.beads = tkClient // tk implements BeadsProvider
+		slog.Debug("using tk for task tracking", "workDir", workDir)
 	} else {
-		slog.Debug("beads initialization skipped", "workDir", workDir)
+		beadsClient := beads.NewClient(workDir)
+		if beadsClient.HasBeads() {
+			b.beads = beadsClient
+			slog.Debug("using beads for task tracking", "workDir", workDir)
+		} else {
+			slog.Debug("no task tracker found", "workDir", workDir)
+		}
 	}
 
 	return b, nil
