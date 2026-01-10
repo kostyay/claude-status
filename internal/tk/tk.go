@@ -3,64 +3,50 @@ package tk
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/kostyay/claude-status/internal/beads"
+	"github.com/kostyay/claude-status/internal/tasks"
 )
-
-// Commander is an interface for executing commands.
-type Commander interface {
-	Output(name string, args ...string) ([]byte, error)
-}
-
-// DefaultCommander executes commands using os/exec in a specific directory.
-type DefaultCommander struct {
-	workDir string
-}
-
-// commandTimeout is the maximum time to wait for tk commands.
-const commandTimeout = 10 * time.Second
-
-// Output runs a command and returns its output with a timeout.
-func (d DefaultCommander) Output(name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, name, args...)
-	if d.workDir != "" {
-		cmd.Dir = d.workDir
-	}
-	return cmd.Output()
-}
 
 // Client fetches tk ticket statistics.
 type Client struct {
-	cmd     Commander
+	cmd     tasks.Commander
 	workDir string
 }
 
 // NewClient creates a new tk client for the given working directory.
 func NewClient(workDir string) *Client {
 	return &Client{
-		cmd:     DefaultCommander{workDir: workDir},
+		cmd:     tasks.DefaultCommander{WorkDir: workDir},
 		workDir: workDir,
 	}
 }
 
 // NewClientWithCommander creates a new tk client with a custom commander.
-func NewClientWithCommander(cmd Commander, workDir string) *Client {
+func NewClientWithCommander(cmd tasks.Commander, workDir string) *Client {
 	return &Client{
 		cmd:     cmd,
 		workDir: workDir,
 	}
+}
+
+// Name returns the provider name.
+func (c *Client) Name() string {
+	return "tk"
+}
+
+// Available checks if tk is available in the working directory.
+func (c *Client) Available() bool {
+	_, err := os.Stat(filepath.Join(c.workDir, ".tickets"))
+	if err != nil {
+		slog.Debug("tk not available", "workDir", c.workDir, "err", err)
+	}
+	return err == nil
 }
 
 // ticket represents a tk ticket from tk query output.
@@ -72,16 +58,15 @@ type ticket struct {
 }
 
 // GetStats runs `tk query` and computes stats from JSONL output.
-// Returns beads.Stats for compatibility with existing cache/template.
-func (c *Client) GetStats() (beads.Stats, error) {
+func (c *Client) GetStats() (tasks.Stats, error) {
 	output, err := c.cmd.Output("tk", "query")
 	if err != nil {
-		return beads.Stats{}, fmt.Errorf("failed to run tk query: %w", err)
+		return tasks.Stats{}, fmt.Errorf("failed to run tk query: %w", err)
 	}
 
 	tickets, err := parseJSONL(output)
 	if err != nil {
-		return beads.Stats{}, fmt.Errorf("failed to parse tk query output: %w", err)
+		return tasks.Stats{}, fmt.Errorf("failed to parse tk query output: %w", err)
 	}
 
 	return computeStats(tickets), nil
@@ -111,14 +96,14 @@ func parseJSONL(data []byte) ([]ticket, error) {
 // computeStats calculates stats from tickets.
 // Ready = (open OR in_progress) AND (deps empty OR all deps closed)
 // Blocked = (open OR in_progress) AND (has dep that is not closed)
-func computeStats(tickets []ticket) beads.Stats {
+func computeStats(tickets []ticket) tasks.Stats {
 	// Build status map for dep resolution
 	statusMap := make(map[string]string)
 	for _, t := range tickets {
 		statusMap[t.ID] = t.Status
 	}
 
-	var stats beads.Stats
+	var stats tasks.Stats
 	stats.TotalIssues = len(tickets)
 
 	for _, t := range tickets {
@@ -159,22 +144,6 @@ func isBlocked(t ticket, statusMap map[string]string) bool {
 		}
 	}
 	return false
-}
-
-// HasTk checks if the tk system is available in the working directory.
-func (c *Client) HasTk() bool {
-	ticketsDir := filepath.Join(c.workDir, ".tickets")
-	_, err := os.Stat(ticketsDir)
-	if err != nil {
-		slog.Debug("tk not available", "workDir", c.workDir, "err", err)
-		return false
-	}
-	return true
-}
-
-// HasBeads implements BeadsProvider interface for compatibility.
-func (c *Client) HasBeads() bool {
-	return c.HasTk()
 }
 
 // GetNextTask returns the title of the next ready task, or empty if none.

@@ -6,14 +6,18 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kostyay/claude-status/internal/beads"
 	"github.com/kostyay/claude-status/internal/cache"
 	"github.com/kostyay/claude-status/internal/config"
 	"github.com/kostyay/claude-status/internal/git"
 	"github.com/kostyay/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/tasks"
 	"github.com/kostyay/claude-status/internal/template"
-	"github.com/kostyay/claude-status/internal/tk"
 	"github.com/kostyay/claude-status/internal/tokens"
+
+	// Register task providers in priority order (kt > tk > beads)
+	_ "github.com/kostyay/claude-status/internal/kt"
+	_ "github.com/kostyay/claude-status/internal/tk"
+	_ "github.com/kostyay/claude-status/internal/beads"
 )
 
 // Input represents the JSON input from stdin.
@@ -59,28 +63,21 @@ type CacheProvider interface {
 	GetGitStatus(indexPath string, fetchFn func() (string, error)) (string, error)
 	GetGitDiffStats(indexPath string, fetchFn func() (git.DiffStats, error)) (git.DiffStats, error)
 	GetGitHubBuild(refPath, branch string, ttl time.Duration, fetchFn func() (github.BuildStatus, error)) (github.BuildStatus, error)
-	GetBeadsStats(workDir string, ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error)
+	GetTaskStats(workDir string, ttl time.Duration, fetchFn func() (tasks.Stats, error)) (tasks.Stats, error)
 	GetNextTask(workDir string, ttl time.Duration, fetchFn func() (string, error)) (string, error)
 	EnsureDir() error
 }
 
-// BeadsProvider is an interface for beads operations.
-type BeadsProvider interface {
-	GetStats() (beads.Stats, error)
-	GetNextTask() (string, error)
-	HasBeads() bool
-}
-
 // Builder constructs StatusData from various sources.
 type Builder struct {
-	config      *config.Config
-	cache       CacheProvider
-	git         GitProvider
-	gh          GitHubProvider
-	beads       BeadsProvider
-	workDir     string
-	prefix      string // User-provided prefix text
-	prefixColor string // ANSI color code for prefix
+	config       *config.Config
+	cache        CacheProvider
+	git          GitProvider
+	gh           GitHubProvider
+	taskProvider tasks.Provider
+	workDir      string
+	prefix       string // User-provided prefix text
+	prefixColor  string // ANSI color code for prefix
 }
 
 // ErrNilConfig is returned when a nil config is provided to NewBuilder.
@@ -111,33 +108,21 @@ func NewBuilder(cfg *config.Config, workDir string) (*Builder, error) {
 		slog.Debug("git client initialization skipped", "workDir", workDir, "err", err)
 	}
 
-	// Initialize task tracker: tk takes priority over beads
-	tkClient := tk.NewClient(workDir)
-	if tkClient.HasTk() {
-		b.beads = tkClient // tk implements BeadsProvider
-		slog.Debug("using tk for task tracking", "workDir", workDir)
-	} else {
-		beadsClient := beads.NewClient(workDir)
-		if beadsClient.HasBeads() {
-			b.beads = beadsClient
-			slog.Debug("using beads for task tracking", "workDir", workDir)
-		} else {
-			slog.Debug("no task tracker found", "workDir", workDir)
-		}
-	}
+	// Initialize task tracker via registry (priority: kt > tk > beads)
+	b.taskProvider = tasks.SelectProvider(workDir)
 
 	return b, nil
 }
 
 // NewBuilderWithDeps creates a new status builder with injected dependencies.
-func NewBuilderWithDeps(cfg *config.Config, cache CacheProvider, git GitProvider, gh GitHubProvider, beads BeadsProvider, workDir string) *Builder {
+func NewBuilderWithDeps(cfg *config.Config, cache CacheProvider, git GitProvider, gh GitHubProvider, taskProvider tasks.Provider, workDir string) *Builder {
 	return &Builder{
-		config:  cfg,
-		cache:   cache,
-		git:     git,
-		gh:      gh,
-		beads:   beads,
-		workDir: workDir,
+		config:       cfg,
+		cache:        cache,
+		git:          git,
+		gh:           gh,
+		taskProvider: taskProvider,
+		workDir:      workDir,
 	}
 }
 
@@ -158,8 +143,8 @@ func (b *Builder) Build(input Input) template.StatusData {
 	// Parse token metrics from transcript
 	b.populateTokenMetrics(&data, input)
 
-	// Get beads stats (cached with TTL) - independent of git
-	b.fetchBeadsStats(&data)
+	// Get task stats (cached with TTL) - independent of git
+	b.fetchTaskStats(&data)
 
 	if b.git == nil {
 		return data
@@ -282,38 +267,39 @@ func (b *Builder) SetPrefixColor(color string) {
 	b.prefixColor = color
 }
 
-// fetchBeadsStats fetches beads stats and populates the data.
-func (b *Builder) fetchBeadsStats(data *template.StatusData) {
-	if b.beads == nil {
+// fetchTaskStats fetches task stats and populates the data.
+func (b *Builder) fetchTaskStats(data *template.StatusData) {
+	if b.taskProvider == nil {
 		return
 	}
 
-	ttl := time.Duration(b.config.BeadsTTL) * time.Second
-	stats, err := b.cache.GetBeadsStats(b.workDir, ttl, b.beads.GetStats)
+	ttl := time.Duration(b.config.TasksTTL) * time.Second
+	stats, err := b.cache.GetTaskStats(b.workDir, ttl, b.taskProvider.GetStats)
 	if err != nil {
-		slog.Debug("failed to get beads stats", "err", err)
+		slog.Debug("failed to get task stats", "err", err)
 		return
 	}
 
-	b.populateBeadsStats(data, stats)
+	b.populateTaskStats(data, stats)
 
 	// Get next task (cached with same TTL as stats)
-	nextTask, err := b.cache.GetNextTask(b.workDir, ttl, b.beads.GetNextTask)
+	nextTask, err := b.cache.GetNextTask(b.workDir, ttl, b.taskProvider.GetNextTask)
 	if err != nil {
 		slog.Debug("failed to get next task", "err", err)
 		return
 	}
-	data.BeadsNextTask = nextTask
+	data.TasksNextTask = nextTask
 }
 
-// populateBeadsStats populates beads statistics into StatusData.
-func (b *Builder) populateBeadsStats(data *template.StatusData, stats beads.Stats) {
-	data.HasBeads = true
+// populateTaskStats populates task statistics into StatusData.
+func (b *Builder) populateTaskStats(data *template.StatusData, stats tasks.Stats) {
+	data.HasTasks = true
+	data.TaskProvider = b.taskProvider.Name()
 
 	// Raw values only (formatting is done in templates)
-	data.BeadsTotal = stats.TotalIssues
-	data.BeadsOpen = stats.OpenIssues
-	data.BeadsReady = stats.ReadyIssues
-	data.BeadsInProgress = stats.InProgressIssues
-	data.BeadsBlocked = stats.BlockedIssues
+	data.TasksTotal = stats.TotalIssues
+	data.TasksOpen = stats.OpenIssues
+	data.TasksReady = stats.ReadyIssues
+	data.TasksInProgress = stats.InProgressIssues
+	data.TasksBlocked = stats.BlockedIssues
 }

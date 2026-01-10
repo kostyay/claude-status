@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kostyay/claude-status/internal/beads"
 	"github.com/kostyay/claude-status/internal/config"
 	"github.com/kostyay/claude-status/internal/git"
 	"github.com/kostyay/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/tasks"
 )
 
 // mockGitProvider is a test double for GitProvider.
@@ -53,12 +53,12 @@ type mockCacheProvider struct {
 	diffStatsValue git.DiffStats
 	buildStatus    github.BuildStatus
 	buildErr       error
-	beadsStats     beads.Stats
+	taskStats      tasks.Stats
 	fetchBranch    bool
 	fetchStatus    bool
 	fetchDiffStats bool
 	fetchBuild     bool
-	fetchBeads     bool
+	fetchTasks     bool
 }
 
 func (m *mockCacheProvider) EnsureDir() error { return nil }
@@ -91,35 +91,40 @@ func (m *mockCacheProvider) GetGitHubBuild(refPath, branch string, ttl time.Dura
 	return m.buildStatus, m.buildErr
 }
 
-func (m *mockCacheProvider) GetBeadsStats(workDir string, ttl time.Duration, fetchFn func() (beads.Stats, error)) (beads.Stats, error) {
-	if m.fetchBeads {
+func (m *mockCacheProvider) GetTaskStats(workDir string, ttl time.Duration, fetchFn func() (tasks.Stats, error)) (tasks.Stats, error) {
+	if m.fetchTasks {
 		return fetchFn()
 	}
-	return m.beadsStats, nil
+	return m.taskStats, nil
 }
 
 func (m *mockCacheProvider) GetNextTask(workDir string, ttl time.Duration, fetchFn func() (string, error)) (string, error) {
 	return fetchFn()
 }
 
-// mockBeadsProvider is a test double for BeadsProvider.
-type mockBeadsProvider struct {
-	stats    beads.Stats
-	err      error
-	hasBeads bool
-	nextTask string
+// mockTaskProvider is a test double for tasks.Provider.
+type mockTaskProvider struct {
+	name      string
+	available bool
+	stats     tasks.Stats
+	err       error
+	nextTask  string
 }
 
-func (m *mockBeadsProvider) GetStats() (beads.Stats, error) {
+func (m *mockTaskProvider) Name() string {
+	return m.name
+}
+
+func (m *mockTaskProvider) Available() bool {
+	return m.available
+}
+
+func (m *mockTaskProvider) GetStats() (tasks.Stats, error) {
 	return m.stats, m.err
 }
 
-func (m *mockBeadsProvider) GetNextTask() (string, error) {
+func (m *mockTaskProvider) GetNextTask() (string, error) {
 	return m.nextTask, nil
-}
-
-func (m *mockBeadsProvider) HasBeads() bool {
-	return m.hasBeads
 }
 
 func TestBuild_AllData(t *testing.T) {
@@ -530,25 +535,26 @@ func writeTestFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
-func TestBuild_BeadsStats(t *testing.T) {
+func TestBuild_TaskStats(t *testing.T) {
 	cfg := config.Default()
 
-	beadsProvider := &mockBeadsProvider{
-		stats: beads.Stats{
+	taskProvider := &mockTaskProvider{
+		name:      "test",
+		available: true,
+		stats: tasks.Stats{
 			TotalIssues:      10,
 			OpenIssues:       5,
 			InProgressIssues: 2,
 			ReadyIssues:      3,
 			BlockedIssues:    1,
 		},
-		hasBeads: true,
 	}
 
 	cache := &mockCacheProvider{
-		fetchBeads: true,
+		fetchTasks: true,
 	}
 
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, beadsProvider, "/project")
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, taskProvider, "/project")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -557,32 +563,32 @@ func TestBuild_BeadsStats(t *testing.T) {
 
 	data := builder.Build(input)
 
-	// Check beads stats are populated (raw values)
-	if !data.HasBeads {
-		t.Error("HasBeads should be true")
+	// Check task stats are populated (raw values)
+	if !data.HasTasks {
+		t.Error("HasTasks should be true")
 	}
-	if data.BeadsTotal != 10 {
-		t.Errorf("BeadsTotal = %d, want %d", data.BeadsTotal, 10)
+	if data.TasksTotal != 10 {
+		t.Errorf("TasksTotal = %d, want %d", data.TasksTotal, 10)
 	}
-	if data.BeadsOpen != 5 {
-		t.Errorf("BeadsOpen = %d, want %d", data.BeadsOpen, 5)
+	if data.TasksOpen != 5 {
+		t.Errorf("TasksOpen = %d, want %d", data.TasksOpen, 5)
 	}
-	if data.BeadsReady != 3 {
-		t.Errorf("BeadsReady = %d, want %d", data.BeadsReady, 3)
+	if data.TasksReady != 3 {
+		t.Errorf("TasksReady = %d, want %d", data.TasksReady, 3)
 	}
-	if data.BeadsInProgress != 2 {
-		t.Errorf("BeadsInProgress = %d, want %d", data.BeadsInProgress, 2)
+	if data.TasksInProgress != 2 {
+		t.Errorf("TasksInProgress = %d, want %d", data.TasksInProgress, 2)
 	}
-	if data.BeadsBlocked != 1 {
-		t.Errorf("BeadsBlocked = %d, want %d", data.BeadsBlocked, 1)
+	if data.TasksBlocked != 1 {
+		t.Errorf("TasksBlocked = %d, want %d", data.TasksBlocked, 1)
 	}
 }
 
-func TestBuild_NoBeads(t *testing.T) {
+func TestBuild_NoTasks(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 
-	// nil beads provider simulates beads not available
+	// nil task provider simulates no task system available
 	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
 
 	input := Input{
@@ -592,11 +598,11 @@ func TestBuild_NoBeads(t *testing.T) {
 
 	data := builder.Build(input)
 
-	if data.HasBeads {
-		t.Error("HasBeads should be false when beads provider is nil")
+	if data.HasTasks {
+		t.Error("HasTasks should be false when task provider is nil")
 	}
-	if data.BeadsOpen != 0 {
-		t.Errorf("BeadsOpen = %d, want 0", data.BeadsOpen)
+	if data.TasksOpen != 0 {
+		t.Errorf("TasksOpen = %d, want 0", data.TasksOpen)
 	}
 }
 
@@ -661,25 +667,26 @@ func TestSetPrefix_Empty(t *testing.T) {
 	}
 }
 
-func TestBuild_BeadsZeroValues(t *testing.T) {
+func TestBuild_TasksZeroValues(t *testing.T) {
 	cfg := config.Default()
 
-	beadsProvider := &mockBeadsProvider{
-		stats: beads.Stats{
+	taskProvider := &mockTaskProvider{
+		name:      "test",
+		available: true,
+		stats: tasks.Stats{
 			TotalIssues:      0,
 			OpenIssues:       0,
 			InProgressIssues: 0,
 			ReadyIssues:      0,
 			BlockedIssues:    0,
 		},
-		hasBeads: true,
 	}
 
 	cache := &mockCacheProvider{
-		fetchBeads: true,
+		fetchTasks: true,
 	}
 
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, beadsProvider, "/project")
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, taskProvider, "/project")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -688,22 +695,22 @@ func TestBuild_BeadsZeroValues(t *testing.T) {
 
 	data := builder.Build(input)
 
-	// Should have HasBeads true even with zero values
-	if !data.HasBeads {
-		t.Error("HasBeads should be true even with zero stats")
+	// Should have HasTasks true even with zero values
+	if !data.HasTasks {
+		t.Error("HasTasks should be true even with zero stats")
 	}
 
 	// Values should be zero
-	if data.BeadsOpen != 0 {
-		t.Errorf("BeadsOpen = %d, want 0", data.BeadsOpen)
+	if data.TasksOpen != 0 {
+		t.Errorf("TasksOpen = %d, want 0", data.TasksOpen)
 	}
-	if data.BeadsReady != 0 {
-		t.Errorf("BeadsReady = %d, want 0", data.BeadsReady)
+	if data.TasksReady != 0 {
+		t.Errorf("TasksReady = %d, want 0", data.TasksReady)
 	}
-	if data.BeadsInProgress != 0 {
-		t.Errorf("BeadsInProgress = %d, want 0", data.BeadsInProgress)
+	if data.TasksInProgress != 0 {
+		t.Errorf("TasksInProgress = %d, want 0", data.TasksInProgress)
 	}
-	if data.BeadsBlocked != 0 {
-		t.Errorf("BeadsBlocked = %d, want 0", data.BeadsBlocked)
+	if data.TasksBlocked != 0 {
+		t.Errorf("TasksBlocked = %d, want 0", data.TasksBlocked)
 	}
 }

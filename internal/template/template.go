@@ -60,14 +60,15 @@ type StatusData struct {
 	ContextPct    float64 // Context percentage (0-100)
 	ContextPctUse float64 // Usable context percentage (0-100)
 
-	// Beads stats (raw values)
-	BeadsTotal      int    // Total issues
-	BeadsOpen       int    // Open issues
-	BeadsReady      int    // Ready to work issues
-	BeadsInProgress int    // In progress issues
-	BeadsBlocked    int    // Blocked issues
-	BeadsNextTask   string // Title of next ready task, or empty if none
-	HasBeads        bool   // Whether beads system is available
+	// Task stats (raw values) - populated by kt, tk, or beads
+	TaskProvider    string // Provider name: "kt", "tk", or "beads"
+	TasksTotal      int    // Total issues
+	TasksOpen       int    // Open issues
+	TasksReady      int    // Ready to work issues
+	TasksInProgress int    // In progress issues
+	TasksBlocked    int    // Blocked issues
+	TasksNextTask   string // Title of next ready task, or empty if none
+	HasTasks        bool   // Whether task system is available
 }
 
 // FormatTokens formats a token count in a human-readable way.

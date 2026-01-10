@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kostyay/claude-status/internal/beads"
 	"github.com/kostyay/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/tasks"
 )
 
 // mockClock is a test double for Clock.
@@ -670,13 +670,13 @@ func TestFileLockSerializesMultipleManagers(t *testing.T) {
 	}
 }
 
-func TestGetBeadsStats_CacheMiss(t *testing.T) {
+func TestGetTaskStats_CacheMiss(t *testing.T) {
 	manager, _, _ := setupTestCache(t)
 
 	fetchCalls := 0
-	fetchFn := func() (beads.Stats, error) {
+	fetchFn := func() (tasks.Stats, error) {
 		fetchCalls++
-		return beads.Stats{
+		return tasks.Stats{
 			TotalIssues:      10,
 			OpenIssues:       5,
 			InProgressIssues: 2,
@@ -685,99 +685,99 @@ func TestGetBeadsStats_CacheMiss(t *testing.T) {
 		}, nil
 	}
 
-	stats, err := manager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
+	stats, err := manager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
 	if err != nil {
-		t.Fatalf("GetBeadsStats() error = %v", err)
+		t.Fatalf("GetTaskStats() error = %v", err)
 	}
 	if stats.TotalIssues != 10 {
-		t.Errorf("GetBeadsStats().TotalIssues = %d, want %d", stats.TotalIssues, 10)
+		t.Errorf("GetTaskStats().TotalIssues = %d, want %d", stats.TotalIssues, 10)
 	}
 	if stats.OpenIssues != 5 {
-		t.Errorf("GetBeadsStats().OpenIssues = %d, want %d", stats.OpenIssues, 5)
+		t.Errorf("GetTaskStats().OpenIssues = %d, want %d", stats.OpenIssues, 5)
 	}
 	if fetchCalls != 1 {
 		t.Errorf("fetchFn called %d times, want 1", fetchCalls)
 	}
 }
 
-func TestGetBeadsStats_CacheHit(t *testing.T) {
+func TestGetTaskStats_CacheHit(t *testing.T) {
 	manager, _, _ := setupTestCache(t)
 
 	fetchCalls := 0
-	fetchFn := func() (beads.Stats, error) {
+	fetchFn := func() (tasks.Stats, error) {
 		fetchCalls++
-		return beads.Stats{
+		return tasks.Stats{
 			TotalIssues: 10,
 			OpenIssues:  5,
 		}, nil
 	}
 
 	// First call populates cache
-	manager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
+	manager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
 
 	// Second call should hit cache
-	stats, err := manager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
+	stats, err := manager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
 	if err != nil {
-		t.Fatalf("GetBeadsStats() error = %v", err)
+		t.Fatalf("GetTaskStats() error = %v", err)
 	}
 	if stats.TotalIssues != 10 {
-		t.Errorf("GetBeadsStats().TotalIssues = %d, want %d", stats.TotalIssues, 10)
+		t.Errorf("GetTaskStats().TotalIssues = %d, want %d", stats.TotalIssues, 10)
 	}
 	if fetchCalls != 1 {
 		t.Errorf("fetchFn called %d times, want 1 (cache should hit)", fetchCalls)
 	}
 }
 
-func TestGetBeadsStats_TTLExpired(t *testing.T) {
+func TestGetTaskStats_TTLExpired(t *testing.T) {
 	manager, _, clock := setupTestCache(t)
 
 	fetchCalls := 0
-	fetchFn := func() (beads.Stats, error) {
+	fetchFn := func() (tasks.Stats, error) {
 		fetchCalls++
 		if fetchCalls == 1 {
-			return beads.Stats{TotalIssues: 10}, nil
+			return tasks.Stats{TotalIssues: 10}, nil
 		}
-		return beads.Stats{TotalIssues: 15}, nil
+		return tasks.Stats{TotalIssues: 15}, nil
 	}
 
 	// First fetch
-	manager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
+	manager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
 
 	// Advance time past TTL
 	clock.Advance(61 * time.Second)
 
 	// Second fetch should invalidate due to TTL
-	stats, err := manager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
+	stats, err := manager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
 	if err != nil {
-		t.Fatalf("GetBeadsStats() error = %v", err)
+		t.Fatalf("GetTaskStats() error = %v", err)
 	}
 	if stats.TotalIssues != 15 {
-		t.Errorf("GetBeadsStats().TotalIssues = %d, want %d", stats.TotalIssues, 15)
+		t.Errorf("GetTaskStats().TotalIssues = %d, want %d", stats.TotalIssues, 15)
 	}
 	if fetchCalls != 2 {
 		t.Errorf("fetchFn called %d times, want 2", fetchCalls)
 	}
 }
 
-func TestGetBeadsStats_PerProjectCache(t *testing.T) {
+func TestGetTaskStats_PerProjectCache(t *testing.T) {
 	manager, _, _ := setupTestCache(t)
 
 	// Track which workDir was requested
 	fetchCalls := make(map[string]int)
-	fetchFn := func(workDir string) func() (beads.Stats, error) {
-		return func() (beads.Stats, error) {
+	fetchFn := func(workDir string) func() (tasks.Stats, error) {
+		return func() (tasks.Stats, error) {
 			fetchCalls[workDir]++
 			if workDir == "/project/a" {
-				return beads.Stats{TotalIssues: 10, ReadyIssues: 5}, nil
+				return tasks.Stats{TotalIssues: 10, ReadyIssues: 5}, nil
 			}
-			return beads.Stats{TotalIssues: 20, ReadyIssues: 8}, nil
+			return tasks.Stats{TotalIssues: 20, ReadyIssues: 8}, nil
 		}
 	}
 
 	// Fetch for project A
-	statsA, err := manager.GetBeadsStats("/project/a", 60*time.Second, fetchFn("/project/a"))
+	statsA, err := manager.GetTaskStats("/project/a", 60*time.Second, fetchFn("/project/a"))
 	if err != nil {
-		t.Fatalf("GetBeadsStats(/project/a) error = %v", err)
+		t.Fatalf("GetTaskStats(/project/a) error = %v", err)
 	}
 	if statsA.TotalIssues != 10 {
 		t.Errorf("Project A TotalIssues = %d, want 10", statsA.TotalIssues)
@@ -787,9 +787,9 @@ func TestGetBeadsStats_PerProjectCache(t *testing.T) {
 	}
 
 	// Fetch for project B - should NOT use project A's cache
-	statsB, err := manager.GetBeadsStats("/project/b", 60*time.Second, fetchFn("/project/b"))
+	statsB, err := manager.GetTaskStats("/project/b", 60*time.Second, fetchFn("/project/b"))
 	if err != nil {
-		t.Fatalf("GetBeadsStats(/project/b) error = %v", err)
+		t.Fatalf("GetTaskStats(/project/b) error = %v", err)
 	}
 	if statsB.TotalIssues != 20 {
 		t.Errorf("Project B TotalIssues = %d, want 20", statsB.TotalIssues)
@@ -807,9 +807,9 @@ func TestGetBeadsStats_PerProjectCache(t *testing.T) {
 	}
 
 	// Fetching project A again should use cache
-	statsA2, err := manager.GetBeadsStats("/project/a", 60*time.Second, fetchFn("/project/a"))
+	statsA2, err := manager.GetTaskStats("/project/a", 60*time.Second, fetchFn("/project/a"))
 	if err != nil {
-		t.Fatalf("GetBeadsStats(/project/a) second call error = %v", err)
+		t.Fatalf("GetTaskStats(/project/a) second call error = %v", err)
 	}
 	if statsA2.TotalIssues != 10 {
 		t.Errorf("Project A (cached) TotalIssues = %d, want 10", statsA2.TotalIssues)
@@ -819,9 +819,9 @@ func TestGetBeadsStats_PerProjectCache(t *testing.T) {
 	}
 
 	// Fetching project B again should use cache
-	statsB2, err := manager.GetBeadsStats("/project/b", 60*time.Second, fetchFn("/project/b"))
+	statsB2, err := manager.GetTaskStats("/project/b", 60*time.Second, fetchFn("/project/b"))
 	if err != nil {
-		t.Fatalf("GetBeadsStats(/project/b) second call error = %v", err)
+		t.Fatalf("GetTaskStats(/project/b) second call error = %v", err)
 	}
 	if statsB2.TotalIssues != 20 {
 		t.Errorf("Project B (cached) TotalIssues = %d, want 20", statsB2.TotalIssues)
