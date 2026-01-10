@@ -109,7 +109,7 @@ func TestClient_GetStats_CommandError(t *testing.T) {
 func TestClient_Available(t *testing.T) {
 	t.Run("kt available", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		ktDir := tmpDir + "/.kticket"
+		ktDir := tmpDir + "/.ktickets"
 		if err := os.MkdirAll(ktDir, 0755); err != nil {
 			t.Fatal(err)
 		}

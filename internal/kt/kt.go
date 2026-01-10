@@ -39,7 +39,7 @@ func (c *Client) Name() string {
 
 // Available checks if kt is available in the working directory.
 func (c *Client) Available() bool {
-	_, err := os.Stat(filepath.Join(c.workDir, ".kticket"))
+	_, err := os.Stat(filepath.Join(c.workDir, ".ktickets"))
 	if err != nil {
 		slog.Debug("kt not available", "workDir", c.workDir, "err", err)
 	}
