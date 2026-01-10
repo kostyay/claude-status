@@ -1,4 +1,4 @@
-package beads
+package kt
 
 import (
 	"errors"
@@ -10,68 +10,72 @@ import (
 
 // mockCommander is a test double for Commander.
 type mockCommander struct {
-	output []byte
-	err    error
+	outputs map[string][]byte
+	errs    map[string]error
 }
 
 func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
-	return m.output, m.err
+	key := name
+	for _, arg := range args {
+		key += " " + arg
+	}
+	if err, ok := m.errs[key]; ok {
+		return nil, err
+	}
+	if out, ok := m.outputs[key]; ok {
+		return out, nil
+	}
+	return nil, nil
 }
 
 func TestClient_GetStats(t *testing.T) {
 	tests := []struct {
 		name    string
-		output  string
+		stats   string
+		ready   string
+		blocked string
 		wantErr bool
 		want    tasks.Stats
 	}{
 		{
-			name: "valid stats",
-			output: `{
-				"summary": {
-					"total_issues": 10,
-					"open_issues": 5,
-					"in_progress_issues": 2,
-					"closed_issues": 3,
-					"blocked_issues": 1,
-					"ready_issues": 4
-				}
-			}`,
+			name:    "full stats",
+			stats:   `{"open": 5, "in_progress": 2, "closed": 3, "total": 10}`,
+			ready:   `[{"id":"kt-001","title":"Task 1"},{"id":"kt-002","title":"Task 2"}]`,
+			blocked: `[{"id":"kt-003","title":"Task 3"}]`,
 			wantErr: false,
 			want: tasks.Stats{
 				TotalIssues:      10,
 				OpenIssues:       5,
 				InProgressIssues: 2,
 				ClosedIssues:     3,
+				ReadyIssues:      2,
 				BlockedIssues:    1,
-				ReadyIssues:      4,
 			},
 		},
 		{
-			name: "empty stats",
-			output: `{
-				"summary": {
-					"total_issues": 0,
-					"open_issues": 0,
-					"in_progress_issues": 0,
-					"closed_issues": 0,
-					"blocked_issues": 0,
-					"ready_issues": 0
-				}
-			}`,
+			name:    "empty stats",
+			stats:   `{"open": 0, "in_progress": 0, "closed": 0, "total": 0}`,
+			ready:   `[]`,
+			blocked: `[]`,
 			wantErr: false,
 			want:    tasks.Stats{},
 		},
 		{
 			name:    "invalid json",
-			output:  `not json`,
+			stats:   `not json`,
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := &mockCommander{output: []byte(tt.output)}
+			cmd := &mockCommander{
+				outputs: map[string][]byte{
+					"kt stats --json":   []byte(tt.stats),
+					"kt ready --json":   []byte(tt.ready),
+					"kt blocked --json": []byte(tt.blocked),
+				},
+			}
 			client := NewClientWithCommander(cmd, "/test")
 
 			got, err := client.GetStats()
@@ -89,7 +93,11 @@ func TestClient_GetStats(t *testing.T) {
 }
 
 func TestClient_GetStats_CommandError(t *testing.T) {
-	cmd := &mockCommander{err: errors.New("command failed")}
+	cmd := &mockCommander{
+		errs: map[string]error{
+			"kt stats --json": errors.New("command failed"),
+		},
+	}
 	client := NewClientWithCommander(cmd, "/test")
 
 	_, err := client.GetStats()
@@ -99,31 +107,36 @@ func TestClient_GetStats_CommandError(t *testing.T) {
 }
 
 func TestClient_Available(t *testing.T) {
-	t.Run("beads available", func(t *testing.T) {
-		// Create temp directory with .beads folder
+	t.Run("kt available", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		beadsDir := tmpDir + "/.beads"
-		if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		ktDir := tmpDir + "/.kticket"
+		if err := os.MkdirAll(ktDir, 0755); err != nil {
 			t.Fatal(err)
 		}
 
 		client := NewClient(tmpDir)
 		got := client.Available()
 		if !got {
-			t.Error("HasBeads() = false, want true")
+			t.Error("Available() = false, want true")
 		}
 	})
 
-	t.Run("beads not available", func(t *testing.T) {
-		// Create temp directory without .beads folder
+	t.Run("kt not available", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		client := NewClient(tmpDir)
 		got := client.Available()
 		if got {
-			t.Error("HasBeads() = true, want false")
+			t.Error("Available() = true, want false")
 		}
 	})
+}
+
+func TestClient_Name(t *testing.T) {
+	client := NewClient("/test")
+	if client.Name() != "kt" {
+		t.Errorf("Name() = %q, want %q", client.Name(), "kt")
+	}
 }
 
 func TestNewClient(t *testing.T) {
@@ -145,13 +158,13 @@ func TestClient_GetNextTask(t *testing.T) {
 	}{
 		{
 			name:    "single task",
-			output:  `[{"id": "task-1", "title": "Fix the bug"}]`,
+			output:  `[{"id": "kt-001", "title": "Fix the bug"}]`,
 			wantErr: false,
 			want:    "Fix the bug",
 		},
 		{
 			name:    "multiple tasks returns first",
-			output:  `[{"id": "task-1", "title": "First task"}, {"id": "task-2", "title": "Second task"}]`,
+			output:  `[{"id": "kt-001", "title": "First task"}, {"id": "kt-002", "title": "Second task"}]`,
 			wantErr: false,
 			want:    "First task",
 		},
@@ -170,7 +183,11 @@ func TestClient_GetNextTask(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := &mockCommander{output: []byte(tt.output)}
+			cmd := &mockCommander{
+				outputs: map[string][]byte{
+					"kt ready --json": []byte(tt.output),
+				},
+			}
 			client := NewClientWithCommander(cmd, "/test")
 
 			got, err := client.GetNextTask()
@@ -182,15 +199,5 @@ func TestClient_GetNextTask(t *testing.T) {
 				t.Errorf("GetNextTask() = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestClient_GetNextTask_CommandError(t *testing.T) {
-	cmd := &mockCommander{err: errors.New("command failed")}
-	client := NewClientWithCommander(cmd, "/test")
-
-	_, err := client.GetNextTask()
-	if err == nil {
-		t.Error("GetNextTask() expected error for command failure")
 	}
 }

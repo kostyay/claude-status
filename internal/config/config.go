@@ -9,16 +9,16 @@ import (
 // DefaultTemplate is the default Go template for the status line.
 // All values are raw numbers; use fmtTokens, fmtPct, fmtSigned for formatting.
 // Prefix color is set via --prefix-color flag (defaults to cyan if prefix is set).
-const DefaultTemplate = `{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .BeadsReady}}
-{{yellow}}📋 Tasks: {{.BeadsReady}} ready{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}} blocked{{reset}}{{end}}{{if .BeadsNextTask}}. Next Up: {{.BeadsNextTask}}{{end}}{{end}}`
+const DefaultTemplate = `{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .TasksReady}}
+{{yellow}}📋 {{.TaskProvider}}: {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{if .TasksNextTask}}. Next Up: {{.TasksNextTask}}{{end}}{{end}}`
 
 // TemplateWithTokens is an example template that shows all token metrics.
 // Usage: set "template" in config.json to this value.
 const TemplateWithTokens = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{fmtTokens .TokensInput}} Out:{{fmtTokens .TokensOutput}} Cache:{{fmtTokens .TokensCached}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}`
 
-// TemplateWithBeads is an example template that shows beads task stats.
+// TemplateWithTasks is an example template that shows task stats (beads/tk/kt).
 // Usage: set "template" in config.json to this value.
-const TemplateWithBeads = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .BeadsReady}} | {{yellow}}📋 Tasks: {{.BeadsReady}} ready{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}} blocked{{reset}}{{end}}{{if .BeadsNextTask}}. Next Up: {{.BeadsNextTask}}{{end}}{{end}}`
+const TemplateWithTasks = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .TasksReady}} | {{yellow}}📋 {{.TaskProvider}}: {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{if .TasksNextTask}}. Next Up: {{.TasksNextTask}}{{end}}{{end}}`
 
 // Config holds the configuration for claude-status.
 type Config struct {
@@ -31,8 +31,8 @@ type Config struct {
 	// GitHubTTL is the time-to-live in seconds for cached GitHub build status.
 	GitHubTTL int `json:"github_ttl"`
 
-	// BeadsTTL is the time-to-live in seconds for cached beads stats.
-	BeadsTTL int `json:"beads_ttl"`
+	// TasksTTL is the time-to-live in seconds for cached task stats.
+	TasksTTL int `json:"tasks_ttl"`
 
 	// LoggingEnabled enables logging of status line events.
 	LoggingEnabled bool `json:"logging_enabled"`
@@ -47,7 +47,7 @@ func Default() Config {
 		Template:       DefaultTemplate,
 		GitHubWorkflow: "build_and_test",
 		GitHubTTL:      60,
-		BeadsTTL:       5,
+		TasksTTL:       5,
 		LoggingEnabled: false,
 		LogPath:        "",
 	}
@@ -89,8 +89,8 @@ func LoadFrom(path string) Config {
 	if fileCfg.GitHubTTL > 0 {
 		cfg.GitHubTTL = fileCfg.GitHubTTL
 	}
-	if fileCfg.BeadsTTL > 0 {
-		cfg.BeadsTTL = fileCfg.BeadsTTL
+	if fileCfg.TasksTTL > 0 {
+		cfg.TasksTTL = fileCfg.TasksTTL
 	}
 	// LoggingEnabled is a bool, so we check if it was explicitly set
 	// by seeing if the JSON had the field (we need to re-parse for this)

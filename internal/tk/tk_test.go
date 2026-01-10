@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/kostyay/claude-status/internal/beads"
+	"github.com/kostyay/claude-status/internal/tasks"
 )
 
 // mockCommander is a test double for Commander.
@@ -23,7 +23,7 @@ func TestClient_GetStats(t *testing.T) {
 		name    string
 		output  string
 		wantErr bool
-		want    beads.Stats
+		want    tasks.Stats
 	}{
 		{
 			name: "mixed statuses",
@@ -32,7 +32,7 @@ func TestClient_GetStats(t *testing.T) {
 {"id":"t-003","title":"Task 3","status":"closed","deps":[]}
 {"id":"t-004","title":"Task 4","status":"open","deps":["t-001"]}`,
 			wantErr: false,
-			want: beads.Stats{
+			want: tasks.Stats{
 				TotalIssues:      4,
 				OpenIssues:       2,
 				InProgressIssues: 1,
@@ -46,7 +46,7 @@ func TestClient_GetStats(t *testing.T) {
 			output: `{"id":"t-001","title":"Task 1","status":"open","deps":[]}
 {"id":"t-002","title":"Task 2","status":"open","deps":[]}`,
 			wantErr: false,
-			want: beads.Stats{
+			want: tasks.Stats{
 				TotalIssues:      2,
 				OpenIssues:       2,
 				InProgressIssues: 0,
@@ -60,7 +60,7 @@ func TestClient_GetStats(t *testing.T) {
 			output: `{"id":"t-001","title":"Task 1","status":"closed","deps":[]}
 {"id":"t-002","title":"Task 2","status":"open","deps":["t-001"]}`,
 			wantErr: false,
-			want: beads.Stats{
+			want: tasks.Stats{
 				TotalIssues:      2,
 				OpenIssues:       1,
 				InProgressIssues: 0,
@@ -73,7 +73,7 @@ func TestClient_GetStats(t *testing.T) {
 			name:    "empty output",
 			output:  ``,
 			wantErr: false,
-			want:    beads.Stats{},
+			want:    tasks.Stats{},
 		},
 		{
 			name:    "invalid json",
@@ -111,7 +111,7 @@ func TestClient_GetStats_CommandError(t *testing.T) {
 	}
 }
 
-func TestClient_HasTk(t *testing.T) {
+func TestClient_Available(t *testing.T) {
 	t.Run("tk available", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		ticketsDir := tmpDir + "/.tickets"
@@ -120,7 +120,7 @@ func TestClient_HasTk(t *testing.T) {
 		}
 
 		client := NewClient(tmpDir)
-		got := client.HasTk()
+		got := client.Available()
 		if !got {
 			t.Error("HasTk() = false, want true")
 		}
@@ -130,25 +130,11 @@ func TestClient_HasTk(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		client := NewClient(tmpDir)
-		got := client.HasTk()
+		got := client.Available()
 		if got {
 			t.Error("HasTk() = true, want false")
 		}
 	})
-}
-
-func TestClient_HasBeads(t *testing.T) {
-	// HasBeads is an alias for HasTk for interface compatibility
-	tmpDir := t.TempDir()
-	ticketsDir := tmpDir + "/.tickets"
-	if err := os.MkdirAll(ticketsDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	client := NewClient(tmpDir)
-	if !client.HasBeads() {
-		t.Error("HasBeads() = false, want true")
-	}
 }
 
 func TestNewClient(t *testing.T) {

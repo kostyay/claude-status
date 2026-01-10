@@ -17,6 +17,7 @@ import (
 	"github.com/kostyay/claude-status/internal/config"
 	"github.com/kostyay/claude-status/internal/github"
 	"github.com/kostyay/claude-status/internal/status"
+	"github.com/kostyay/claude-status/internal/tasks"
 	"github.com/kostyay/claude-status/internal/template"
 )
 
@@ -462,11 +463,11 @@ func (m *mockBeadsCommander) Output(name string, args ...string) ([]byte, error)
 	return []byte(m.output), nil
 }
 
-func TestE2E_BeadsWidget(t *testing.T) {
-	// Test that beads stats are properly rendered in the template
+func TestE2E_TasksWidget(t *testing.T) {
+	// Test that task stats are properly rendered in the template
 	cfg := config.Config{
-		Template: config.TemplateWithBeads,
-		BeadsTTL: 5,
+		Template: config.TemplateWithTasks,
+		TasksTTL: 5,
 	}
 
 	engine, err := template.NewEngine(cfg.Template)
@@ -475,12 +476,13 @@ func TestE2E_BeadsWidget(t *testing.T) {
 	}
 
 	data := template.StatusData{
-		Model:         "Claude",
-		Dir:           "myproject",
-		GitBranch:     "main",
-		HasBeads:      true,
-		BeadsReady:    3,
-		BeadsBlocked:  1,
+		Model:        "Claude",
+		Dir:          "myproject",
+		GitBranch:    "main",
+		TaskProvider: "beads",
+		HasTasks:     true,
+		TasksReady:   3,
+		TasksBlocked: 1,
 		ContextPctUse: 45.2,
 	}
 
@@ -489,12 +491,12 @@ func TestE2E_BeadsWidget(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	// Check that output contains beads info
+	// Check that output contains task info
 	if !strings.Contains(output, "3 ready") {
-		t.Error("Output missing beads ready count")
+		t.Error("Output missing tasks ready count")
 	}
 	if !strings.Contains(output, "1 blocked") {
-		t.Error("Output missing beads blocked count")
+		t.Error("Output missing tasks blocked count")
 	}
 	if !strings.Contains(output, "📋") {
 		t.Error("Output missing beads emoji")
@@ -536,15 +538,15 @@ func TestE2E_BeadsClient(t *testing.T) {
 	}
 }
 
-func TestE2E_BeadsCache(t *testing.T) {
+func TestE2E_TasksCache(t *testing.T) {
 	tmpDir := t.TempDir()
 	cacheManager := cache.NewManager(tmpDir)
 	cacheManager.EnsureDir()
 
 	fetchCalls := 0
-	fetchFn := func() (beads.Stats, error) {
+	fetchFn := func() (tasks.Stats, error) {
 		fetchCalls++
-		return beads.Stats{
+		return tasks.Stats{
 			TotalIssues: 5,
 			OpenIssues:  3,
 			ReadyIssues: 2,
@@ -552,9 +554,9 @@ func TestE2E_BeadsCache(t *testing.T) {
 	}
 
 	// First call should fetch
-	stats1, err := cacheManager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
+	stats1, err := cacheManager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
 	if err != nil {
-		t.Fatalf("GetBeadsStats() error = %v", err)
+		t.Fatalf("GetTaskStats() error = %v", err)
 	}
 	if stats1.TotalIssues != 5 {
 		t.Errorf("TotalIssues = %d, want 5", stats1.TotalIssues)
@@ -564,9 +566,9 @@ func TestE2E_BeadsCache(t *testing.T) {
 	}
 
 	// Second call should use cache
-	stats2, err := cacheManager.GetBeadsStats("/test/project", 60*time.Second, fetchFn)
+	stats2, err := cacheManager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
 	if err != nil {
-		t.Fatalf("GetBeadsStats() error = %v", err)
+		t.Fatalf("GetTaskStats() error = %v", err)
 	}
 	if stats2.TotalIssues != 5 {
 		t.Errorf("TotalIssues = %d, want 5", stats2.TotalIssues)
@@ -677,8 +679,8 @@ func TestE2E_BeadsRealCLI(t *testing.T) {
 	// Create beads client and verify it works
 	client := beads.NewClient(tmpDir)
 
-	if !client.HasBeads() {
-		t.Fatal("HasBeads() = false, want true")
+	if !client.Available() {
+		t.Fatal("Available() = false, want true")
 	}
 
 	stats, err := client.GetStats()
