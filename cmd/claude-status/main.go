@@ -19,6 +19,7 @@ var prefixFlag = flag.String("prefix", "", "Prefix to display at the start of th
 var prefixColorFlag = flag.String("prefix-color", "", "Color for the prefix (cyan, blue, green, yellow, red, magenta, gray)")
 
 var installFlag = flag.Bool("install", false, "Run installation wizard")
+var testFlag = flag.Bool("test", false, "Test mode: use current directory, skip stdin")
 
 func main() {
 	flag.Parse()
@@ -52,10 +53,24 @@ func run() error {
 	// Load configuration
 	cfg := config.Load()
 
-	// Parse input from stdin
 	var input status.Input
-	if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
-		return fmt.Errorf("failed to parse input: %w", err)
+
+	if *testFlag {
+		// Test mode: use current directory
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+		input = status.Input{
+			Model:     status.ModelInfo{ID: "claude-sonnet-4-20250514", DisplayName: "Sonnet 4"},
+			Workspace: status.WorkspaceInfo{CurrentDir: cwd},
+			Version:   "test",
+		}
+	} else {
+		// Parse input from stdin
+		if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
+			return fmt.Errorf("failed to parse input: %w", err)
+		}
 	}
 
 	// Build status data
