@@ -88,12 +88,12 @@ func run() error {
 		if colorName == "" {
 			colorName = "cyan"
 		}
-		if colorCode, ok := template.ColorMap[colorName]; ok {
-			builder.SetPrefixColor(colorCode)
-		} else {
+		colorCode, ok := template.ColorMap[colorName]
+		if !ok {
 			slog.Warn("unknown prefix color, using cyan", "color", colorName)
-			builder.SetPrefixColor(template.ColorMap["cyan"])
+			colorCode = template.ColorMap["cyan"]
 		}
+		builder.SetPrefixColor(colorCode)
 	}
 
 	data := builder.Build(input)

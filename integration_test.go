@@ -476,13 +476,13 @@ func TestE2E_TasksWidget(t *testing.T) {
 	}
 
 	data := template.StatusData{
-		Model:        "Claude",
-		Dir:          "myproject",
-		GitBranch:    "main",
-		TaskProvider: "beads",
-		HasTasks:     true,
-		TasksReady:   3,
-		TasksBlocked: 1,
+		Model:         "Claude",
+		Dir:           "myproject",
+		GitBranch:     "main",
+		TaskProvider:  "beads",
+		HasTasks:      true,
+		TasksReady:    3,
+		TasksBlocked:  1,
 		ContextPctUse: 45.2,
 	}
 

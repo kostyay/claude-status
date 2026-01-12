@@ -15,9 +15,9 @@ import (
 	"github.com/kostyay/claude-status/internal/tokens"
 
 	// Register task providers in priority order (kt > tk > beads)
+	_ "github.com/kostyay/claude-status/internal/beads"
 	_ "github.com/kostyay/claude-status/internal/kt"
 	_ "github.com/kostyay/claude-status/internal/tk"
-	_ "github.com/kostyay/claude-status/internal/beads"
 )
 
 // Input represents the JSON input from stdin.
