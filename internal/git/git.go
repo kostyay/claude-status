@@ -30,12 +30,12 @@ func (e *ExecCommander) Run(ctx context.Context, dir string, args ...string) (st
 
 // DiffStats holds git diff statistics.
 type DiffStats struct {
-	Additions      int // Lines added
-	Deletions      int // Lines deleted
-	NewFiles       int // Untracked or newly staged files
-	ModifiedFiles  int // Modified files
-	DeletedFiles   int // Deleted files
-	UnstagedFiles  int // Files with unstaged changes (need git add)
+	Additions     int // Lines added
+	Deletions     int // Lines deleted
+	NewFiles      int // Untracked or newly staged files
+	ModifiedFiles int // Modified files
+	DeletedFiles  int // Deleted files
+	UnstagedFiles int // Files with unstaged changes (need git add)
 }
 
 // Client provides git operations for a working directory.
