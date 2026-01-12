@@ -24,10 +24,9 @@ type ContextConfig struct {
 }
 
 // GetContextConfig returns context limits based on model ID.
-// Models with "[1m]" suffix have 1M context, others have 200k.
+// Only models with "[1m]" suffix have 1M context, all others have 200k.
 func GetContextConfig(modelID string) ContextConfig {
-	if strings.Contains(strings.ToLower(modelID), "[1m]") ||
-		strings.Contains(strings.ToLower(modelID), "claude-sonnet-4") {
+	if strings.Contains(strings.ToLower(modelID), "[1m]") {
 		return ContextConfig{
 			MaxTokens:    1_000_000,
 			UsableTokens: 800_000, // 80% of 1M

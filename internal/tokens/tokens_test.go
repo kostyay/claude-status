@@ -14,14 +14,20 @@ func TestGetContextConfig(t *testing.T) {
 		wantUsable int64
 	}{
 		{
-			name:       "Sonnet 4.5 model",
+			name:       "Sonnet 4 model (200k default)",
 			modelID:    "claude-sonnet-4-20250514",
-			wantMax:    1_000_000,
-			wantUsable: 800_000,
+			wantMax:    200_000,
+			wantUsable: 160_000,
 		},
 		{
-			name:       "Model with [1m] suffix",
-			modelID:    "claude-3-opus[1m]",
+			name:       "Sonnet 4.5 model (200k default)",
+			modelID:    "claude-sonnet-4-5-20250929",
+			wantMax:    200_000,
+			wantUsable: 160_000,
+		},
+		{
+			name:       "Sonnet 4.5 with [1m] suffix",
+			modelID:    "claude-sonnet-4-5-20250929[1m]",
 			wantMax:    1_000_000,
 			wantUsable: 800_000,
 		},
