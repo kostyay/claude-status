@@ -14,7 +14,7 @@ import (
 	"github.com/kostyay/claude-status/internal/template"
 	"github.com/kostyay/claude-status/internal/tokens"
 
-	// Register task providers in priority order (kt > tk > beads)
+	// Task providers (priority controlled by RegisterWithPriority, not import order)
 	_ "github.com/kostyay/claude-status/internal/beads"
 	_ "github.com/kostyay/claude-status/internal/kt"
 	_ "github.com/kostyay/claude-status/internal/tk"
