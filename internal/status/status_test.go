@@ -53,12 +53,10 @@ type mockCacheProvider struct {
 	diffStatsValue git.DiffStats
 	buildStatus    github.BuildStatus
 	buildErr       error
-	taskStats      tasks.Stats
 	fetchBranch    bool
 	fetchStatus    bool
 	fetchDiffStats bool
 	fetchBuild     bool
-	fetchTasks     bool
 }
 
 func (m *mockCacheProvider) EnsureDir() error { return nil }
@@ -89,17 +87,6 @@ func (m *mockCacheProvider) GetGitHubBuild(refPath, branch string, ttl time.Dura
 		return fetchFn()
 	}
 	return m.buildStatus, m.buildErr
-}
-
-func (m *mockCacheProvider) GetTaskStats(workDir string, ttl time.Duration, fetchFn func() (tasks.Stats, error)) (tasks.Stats, error) {
-	if m.fetchTasks {
-		return fetchFn()
-	}
-	return m.taskStats, nil
-}
-
-func (m *mockCacheProvider) GetNextTask(workDir string, ttl time.Duration, fetchFn func() (string, error)) (string, error) {
-	return fetchFn()
 }
 
 // mockTaskProvider is a test double for tasks.Provider.
@@ -550,9 +537,7 @@ func TestBuild_TaskStats(t *testing.T) {
 		},
 	}
 
-	cache := &mockCacheProvider{
-		fetchTasks: true,
-	}
+	cache := &mockCacheProvider{}
 
 	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, taskProvider, "/project")
 
@@ -682,9 +667,7 @@ func TestBuild_TasksZeroValues(t *testing.T) {
 		},
 	}
 
-	cache := &mockCacheProvider{
-		fetchTasks: true,
-	}
+	cache := &mockCacheProvider{}
 
 	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, taskProvider, "/project")
 

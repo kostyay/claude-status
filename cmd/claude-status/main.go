@@ -33,7 +33,7 @@ func main() {
 		return
 	}
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	os.Exit(runMain())
 }
 
@@ -72,6 +72,11 @@ func run() error {
 			return fmt.Errorf("failed to parse input: %w", err)
 		}
 	}
+
+	slog.Debug("received input",
+		"workDir", input.Workspace.CurrentDir,
+		"sessionID", input.SessionID,
+		"model", input.Model.ID)
 
 	// Build status data
 	builder, err := status.NewBuilder(&cfg, input.Workspace.CurrentDir, input.SessionID)

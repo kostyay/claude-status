@@ -12,7 +12,6 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/kostyay/claude-status/internal/git"
 	"github.com/kostyay/claude-status/internal/github"
-	"github.com/kostyay/claude-status/internal/tasks"
 )
 
 // Clock is an interface for time operations, allowing for testing.
@@ -50,26 +49,12 @@ type CachedDiffStats struct {
 	CachedAt  time.Time     `json:"cached_at"`
 }
 
-// CachedTaskStats holds cached task statistics.
-type CachedTaskStats struct {
-	Stats    tasks.Stats `json:"stats"`
-	CachedAt time.Time   `json:"cached_at"`
-}
-
-// CachedNextTask holds cached next task title.
-type CachedNextTask struct {
-	Title    string    `json:"title"`
-	CachedAt time.Time `json:"cached_at"`
-}
-
 // CacheFile is the structure of the cache file on disk.
 type CacheFile struct {
-	GitBranch    *CachedValue                `json:"git_branch,omitempty"`
-	GitStatus    *CachedValue                `json:"git_status,omitempty"`
-	GitDiffStats *CachedDiffStats            `json:"git_diff_stats,omitempty"`
-	GitHubBuild  *CachedGitHubBuild          `json:"github_build,omitempty"`
-	TaskStatsMap map[string]*CachedTaskStats `json:"task_stats_map,omitempty"` // keyed by workDir
-	NextTaskMap  map[string]*CachedNextTask  `json:"next_task_map,omitempty"`  // keyed by workDir
+	GitBranch    *CachedValue       `json:"git_branch,omitempty"`
+	GitStatus    *CachedValue       `json:"git_status,omitempty"`
+	GitDiffStats *CachedDiffStats   `json:"git_diff_stats,omitempty"`
+	GitHubBuild  *CachedGitHubBuild `json:"github_build,omitempty"`
 }
 
 // Manager handles cache operations with file-based persistence.
@@ -356,123 +341,6 @@ func (m *Manager) GetGitHubBuild(refPath, branch string, ttl time.Duration, fetc
 	return result, resultErr
 }
 
-// GetTaskStats returns cached task stats or fetches them if the cache is invalid.
-// The cache is invalidated when the TTL expires. Stats are cached per workDir.
-func (m *Manager) GetTaskStats(workDir string, ttl time.Duration, fetchFn func() (tasks.Stats, error)) (tasks.Stats, error) {
-	var result tasks.Stats
-	var resultErr error
-
-	m.withFileLock(func() {
-		// Check cache
-		m.mu.RLock()
-		cache := m.load()
-		m.mu.RUnlock()
-
-		if cache.TaskStatsMap != nil {
-			if cached, ok := cache.TaskStatsMap[workDir]; ok {
-				ttlValid := m.clock.Now().Sub(cached.CachedAt) < ttl
-				if ttlValid {
-					result = cached.Stats
-					return
-				}
-			}
-		}
-
-		// Cache miss - fetch and store
-		stats, err := fetchFn()
-		if err != nil {
-			resultErr = err
-			return
-		}
-
-		m.mu.Lock()
-		defer m.mu.Unlock()
-
-		// Re-check cache after acquiring write lock (TOCTOU protection)
-		cache = m.load()
-		if cache.TaskStatsMap != nil {
-			if cached, ok := cache.TaskStatsMap[workDir]; ok {
-				ttlValid := m.clock.Now().Sub(cached.CachedAt) < ttl
-				if ttlValid {
-					result = cached.Stats
-					return
-				}
-			}
-		}
-
-		if cache.TaskStatsMap == nil {
-			cache.TaskStatsMap = make(map[string]*CachedTaskStats)
-		}
-		cache.TaskStatsMap[workDir] = &CachedTaskStats{
-			Stats:    stats,
-			CachedAt: m.clock.Now(),
-		}
-		m.save(cache)
-
-		result = stats
-	})
-
-	return result, resultErr
-}
-
-// GetNextTask returns cached next task or fetches it if the cache is invalid.
-// The cache is invalidated when the TTL expires. Tasks are cached per workDir.
-func (m *Manager) GetNextTask(workDir string, ttl time.Duration, fetchFn func() (string, error)) (string, error) {
-	var result string
-	var resultErr error
-
-	m.withFileLock(func() {
-		// Check cache
-		m.mu.RLock()
-		cache := m.load()
-		m.mu.RUnlock()
-
-		if cache.NextTaskMap != nil {
-			if cached, ok := cache.NextTaskMap[workDir]; ok {
-				ttlValid := m.clock.Now().Sub(cached.CachedAt) < ttl
-				if ttlValid {
-					result = cached.Title
-					return
-				}
-			}
-		}
-
-		// Cache miss - fetch and store
-		title, err := fetchFn()
-		if err != nil {
-			resultErr = err
-			return
-		}
-
-		m.mu.Lock()
-		defer m.mu.Unlock()
-
-		// Re-check cache after acquiring write lock (TOCTOU protection)
-		cache = m.load()
-		if cache.NextTaskMap != nil {
-			if cached, ok := cache.NextTaskMap[workDir]; ok {
-				ttlValid := m.clock.Now().Sub(cached.CachedAt) < ttl
-				if ttlValid {
-					result = cached.Title
-					return
-				}
-			}
-		}
-
-		if cache.NextTaskMap == nil {
-			cache.NextTaskMap = make(map[string]*CachedNextTask)
-		}
-		cache.NextTaskMap[workDir] = &CachedNextTask{
-			Title:    title,
-			CachedAt: m.clock.Now(),
-		}
-		m.save(cache)
-
-		result = title
-	})
-
-	return result, resultErr
-}
 
 // load reads the cache file from disk or returns the in-memory cache.
 func (m *Manager) load() *CacheFile {
@@ -506,14 +374,8 @@ func (m *Manager) load() *CacheFile {
 	return &cache
 }
 
-// maxCacheAge is the maximum age for cached beads stats entries before eviction.
-const maxCacheAge = 7 * 24 * time.Hour // 1 week
-
 // save writes the cache file to disk and updates the in-memory cache.
 func (m *Manager) save(cache *CacheFile) {
-	// Evict old entries before saving
-	m.cleanupOldEntries(cache, maxCacheAge)
-
 	// Update in-memory cache
 	m.memCache = cache
 	m.cacheLoaded = true
@@ -533,29 +395,6 @@ func (m *Manager) save(cache *CacheFile) {
 	if err := os.Rename(tmpPath, m.cachePath); err != nil {
 		slog.Error("failed to rename cache file", "err", err)
 		os.Remove(tmpPath) // Clean up temp file
-	}
-}
-
-// cleanupOldEntries removes entries older than maxAge from TaskStatsMap and NextTaskMap.
-func (m *Manager) cleanupOldEntries(cache *CacheFile, maxAge time.Duration) {
-	now := m.clock.Now()
-
-	// Clean up old TaskStatsMap entries
-	if cache.TaskStatsMap != nil {
-		for key, entry := range cache.TaskStatsMap {
-			if now.Sub(entry.CachedAt) > maxAge {
-				delete(cache.TaskStatsMap, key)
-			}
-		}
-	}
-
-	// Clean up old NextTaskMap entries
-	if cache.NextTaskMap != nil {
-		for key, entry := range cache.NextTaskMap {
-			if now.Sub(entry.CachedAt) > maxAge {
-				delete(cache.NextTaskMap, key)
-			}
-		}
 	}
 }
 
