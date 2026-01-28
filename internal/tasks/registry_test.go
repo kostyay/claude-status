@@ -11,9 +11,9 @@ func TestRegisterWithPriority_Order(t *testing.T) {
 	defer func() { registry = origRegistry }()
 
 	// Register in reverse priority order
-	RegisterWithPriority(30, func(workDir string) Provider { return nil })
-	RegisterWithPriority(10, func(workDir string) Provider { return nil })
-	RegisterWithPriority(20, func(workDir string) Provider { return nil })
+	RegisterWithPriority(30, func(workDir, sessionID string) Provider { return nil })
+	RegisterWithPriority(10, func(workDir, sessionID string) Provider { return nil })
+	RegisterWithPriority(20, func(workDir, sessionID string) Provider { return nil })
 
 	// Verify they're sorted by priority
 	if len(registry) != 3 {
@@ -46,14 +46,14 @@ func TestSelectProvider_Priority(t *testing.T) {
 
 	// Register providers: kt (available), beads (available)
 	// kt should win due to higher priority
-	RegisterWithPriority(PriorityKT, func(workDir string) Provider {
+	RegisterWithPriority(PriorityKT, func(workDir, sessionID string) Provider {
 		return &mockProvider{name: "kt", available: true}
 	})
-	RegisterWithPriority(PriorityBeads, func(workDir string) Provider {
+	RegisterWithPriority(PriorityBeads, func(workDir, sessionID string) Provider {
 		return &mockProvider{name: "beads", available: true}
 	})
 
-	provider := SelectProvider("/test")
+	provider := SelectProvider("/test", "")
 	if provider == nil {
 		t.Fatal("SelectProvider returned nil")
 	}
@@ -70,14 +70,14 @@ func TestSelectProvider_Fallback(t *testing.T) {
 
 	// Register providers: kt (unavailable), beads (available)
 	// beads should be selected as fallback
-	RegisterWithPriority(PriorityKT, func(workDir string) Provider {
+	RegisterWithPriority(PriorityKT, func(workDir, sessionID string) Provider {
 		return &mockProvider{name: "kt", available: false}
 	})
-	RegisterWithPriority(PriorityBeads, func(workDir string) Provider {
+	RegisterWithPriority(PriorityBeads, func(workDir, sessionID string) Provider {
 		return &mockProvider{name: "beads", available: true}
 	})
 
-	provider := SelectProvider("/test")
+	provider := SelectProvider("/test", "")
 	if provider == nil {
 		t.Fatal("SelectProvider returned nil")
 	}
@@ -93,11 +93,11 @@ func TestSelectProvider_None(t *testing.T) {
 	defer func() { registry = origRegistry }()
 
 	// Register providers: all unavailable
-	RegisterWithPriority(PriorityKT, func(workDir string) Provider {
+	RegisterWithPriority(PriorityKT, func(workDir, sessionID string) Provider {
 		return &mockProvider{name: "kt", available: false}
 	})
 
-	provider := SelectProvider("/test")
+	provider := SelectProvider("/test", "")
 	if provider != nil {
 		t.Errorf("SelectProvider() = %v, want nil", provider)
 	}

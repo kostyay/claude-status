@@ -5,8 +5,8 @@ import (
 	"sort"
 )
 
-// ProviderFactory creates a Provider for a given working directory.
-type ProviderFactory func(workDir string) Provider
+// ProviderFactory creates a Provider for a given working directory and session.
+type ProviderFactory func(workDir, sessionID string) Provider
 
 // registeredProvider holds a factory with its priority.
 type registeredProvider struct {
@@ -30,21 +30,22 @@ func RegisterWithPriority(priority int, factory ProviderFactory) {
 
 // Priority constants for task providers.
 const (
-	PriorityKT    = 10 // kt has highest priority
-	PriorityTK    = 20 // tk has second priority
-	PriorityBeads = 30 // beads has lowest priority
+	PriorityClaude = 5  // claude tasks has highest priority
+	PriorityKT     = 10 // kt has second priority
+	PriorityTK     = 20 // tk has third priority
+	PriorityBeads  = 30 // beads has lowest priority
 )
 
-// SelectProvider returns the first available provider for the working directory.
+// SelectProvider returns the first available provider for the working directory and session.
 // Returns nil if no provider is available.
-func SelectProvider(workDir string) Provider {
+func SelectProvider(workDir, sessionID string) Provider {
 	for _, rp := range registry {
-		provider := rp.factory(workDir)
+		provider := rp.factory(workDir, sessionID)
 		if provider.Available() {
-			slog.Debug("using task tracker", "provider", provider.Name(), "workDir", workDir)
+			slog.Debug("using task tracker", "provider", provider.Name(), "workDir", workDir, "sessionID", sessionID)
 			return provider
 		}
 	}
-	slog.Debug("no task tracker found", "workDir", workDir)
+	slog.Debug("no task tracker found", "workDir", workDir, "sessionID", sessionID)
 	return nil
 }
