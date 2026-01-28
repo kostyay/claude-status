@@ -93,7 +93,7 @@ func TestE2E_FullFlow(t *testing.T) {
 	cacheManager := cache.NewManager(cacheDir)
 	cacheManager.EnsureDir()
 
-	builder, err := status.NewBuilder(&cfg, gitDir)
+	builder, err := status.NewBuilder(&cfg, gitDir, "")
 	if err != nil {
 		t.Fatalf("NewBuilder() error = %v", err)
 	}
@@ -169,7 +169,7 @@ func TestE2E_RealGitRepo(t *testing.T) {
 	cacheManager := cache.NewManager(cacheDir)
 	cacheManager.EnsureDir()
 
-	builder, _ := status.NewBuilder(&cfg, gitDir)
+	builder, _ := status.NewBuilder(&cfg, gitDir, "")
 	input := status.Input{
 		Model:     status.ModelInfo{DisplayName: "Claude"},
 		Workspace: status.WorkspaceInfo{CurrentDir: gitDir},
@@ -227,13 +227,13 @@ func TestE2E_CachingPerformance(t *testing.T) {
 
 	// First call - populates cache
 	start1 := time.Now()
-	builder1, _ := status.NewBuilder(&cfg, gitDir)
+	builder1, _ := status.NewBuilder(&cfg, gitDir, "")
 	builder1.Build(input)
 	duration1 := time.Since(start1)
 
 	// Second call - should use cache
 	start2 := time.Now()
-	builder2, _ := status.NewBuilder(&cfg, gitDir)
+	builder2, _ := status.NewBuilder(&cfg, gitDir, "")
 	builder2.Build(input)
 	duration2 := time.Since(start2)
 
@@ -338,7 +338,7 @@ func TestE2E_GracefulDegradation(t *testing.T) {
 	cacheManager.EnsureDir()
 
 	// Use a non-git directory
-	builder, _ := status.NewBuilder(&cfg, tmpDir)
+	builder, _ := status.NewBuilder(&cfg, tmpDir, "")
 
 	input := status.Input{
 		Model:     status.ModelInfo{DisplayName: "Claude"},

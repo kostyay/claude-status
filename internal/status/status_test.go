@@ -437,7 +437,7 @@ func TestBuild_DirBasename(t *testing.T) {
 }
 
 func TestNewBuilder_NilConfig(t *testing.T) {
-	_, err := NewBuilder(nil, "/tmp")
+	_, err := NewBuilder(nil, "/tmp", "")
 	if err == nil {
 		t.Error("NewBuilder() expected error for nil config")
 	}

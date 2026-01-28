@@ -74,7 +74,7 @@ func run() error {
 	}
 
 	// Build status data
-	builder, err := status.NewBuilder(&cfg, input.Workspace.CurrentDir)
+	builder, err := status.NewBuilder(&cfg, input.Workspace.CurrentDir, input.SessionID)
 	if err != nil {
 		return fmt.Errorf("failed to create builder: %w", err)
 	}

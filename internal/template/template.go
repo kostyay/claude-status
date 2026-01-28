@@ -60,8 +60,9 @@ type StatusData struct {
 	ContextPct    float64 // Context percentage (0-100)
 	ContextPctUse float64 // Usable context percentage (0-100)
 
-	// Task stats (raw values) - populated by kt, tk, or beads
-	TaskProvider    string // Provider name: "kt", "tk", or "beads"
+	// Task stats (raw values) - populated by claude, kt, tk, or beads
+	TaskProvider    string // Provider name: "claude", "kt", "tk", or "beads"
+	TaskListID      string // Task list ID (from CLAUDE_CODE_TASK_LIST_ID env var, empty if using session)
 	TasksTotal      int    // Total issues
 	TasksOpen       int    // Open issues
 	TasksReady      int    // Ready to work issues

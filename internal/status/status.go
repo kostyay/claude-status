@@ -3,6 +3,7 @@ package status
 import (
 	"errors"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 	// Task providers (priority controlled by RegisterWithPriority, not import order)
 	_ "github.com/kostyay/claude-status/internal/beads"
+	_ "github.com/kostyay/claude-status/internal/claudetasks"
 	_ "github.com/kostyay/claude-status/internal/kt"
 	_ "github.com/kostyay/claude-status/internal/tk"
 )
@@ -84,7 +86,7 @@ type Builder struct {
 var ErrNilConfig = errors.New("config cannot be nil")
 
 // NewBuilder creates a new status builder.
-func NewBuilder(cfg *config.Config, workDir string) (*Builder, error) {
+func NewBuilder(cfg *config.Config, workDir, sessionID string) (*Builder, error) {
 	if cfg == nil {
 		return nil, ErrNilConfig
 	}
@@ -108,8 +110,8 @@ func NewBuilder(cfg *config.Config, workDir string) (*Builder, error) {
 		slog.Debug("git client initialization skipped", "workDir", workDir, "err", err)
 	}
 
-	// Initialize task tracker via registry (priority: kt > tk > beads)
-	b.taskProvider = tasks.SelectProvider(workDir)
+	// Initialize task tracker via registry (priority: claude > kt > tk > beads)
+	b.taskProvider = tasks.SelectProvider(workDir, sessionID)
 
 	return b, nil
 }
@@ -295,6 +297,11 @@ func (b *Builder) fetchTaskStats(data *template.StatusData) {
 func (b *Builder) populateTaskStats(data *template.StatusData, stats tasks.Stats) {
 	data.HasTasks = true
 	data.TaskProvider = b.taskProvider.Name()
+
+	// Set task list ID if using shared list (claude provider with env var)
+	if b.taskProvider.Name() == "claude" {
+		data.TaskListID = os.Getenv("CLAUDE_CODE_TASK_LIST_ID")
+	}
 
 	// Raw values only (formatting is done in templates)
 	data.TasksTotal = stats.TotalIssues
