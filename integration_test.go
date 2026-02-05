@@ -17,6 +17,7 @@ import (
 	"github.com/kostyay/claude-status/internal/config"
 	"github.com/kostyay/claude-status/internal/github"
 	"github.com/kostyay/claude-status/internal/status"
+	"github.com/kostyay/claude-status/internal/tasks"
 	"github.com/kostyay/claude-status/internal/template"
 )
 
@@ -534,6 +535,46 @@ func TestE2E_BeadsClient(t *testing.T) {
 	}
 	if stats.BlockedIssues != 1 {
 		t.Errorf("BlockedIssues = %d, want 1", stats.BlockedIssues)
+	}
+}
+
+func TestE2E_TasksCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheManager := cache.NewManager(tmpDir)
+	cacheManager.EnsureDir()
+
+	fetchCalls := 0
+	fetchFn := func() (tasks.Stats, error) {
+		fetchCalls++
+		return tasks.Stats{
+			TotalIssues: 5,
+			OpenIssues:  3,
+			ReadyIssues: 2,
+		}, nil
+	}
+
+	// First call should fetch
+	stats1, err := cacheManager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
+	if err != nil {
+		t.Fatalf("GetTaskStats() error = %v", err)
+	}
+	if stats1.TotalIssues != 5 {
+		t.Errorf("TotalIssues = %d, want 5", stats1.TotalIssues)
+	}
+	if fetchCalls != 1 {
+		t.Errorf("fetchCalls = %d, want 1", fetchCalls)
+	}
+
+	// Second call should use cache
+	stats2, err := cacheManager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
+	if err != nil {
+		t.Fatalf("GetTaskStats() error = %v", err)
+	}
+	if stats2.TotalIssues != 5 {
+		t.Errorf("TotalIssues = %d, want 5", stats2.TotalIssues)
+	}
+	if fetchCalls != 1 {
+		t.Errorf("fetchCalls = %d, want 1 (should use cache)", fetchCalls)
 	}
 }
 

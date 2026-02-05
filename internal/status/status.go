@@ -65,6 +65,8 @@ type CacheProvider interface {
 	GetGitStatus(indexPath string, fetchFn func() (string, error)) (string, error)
 	GetGitDiffStats(indexPath string, fetchFn func() (git.DiffStats, error)) (git.DiffStats, error)
 	GetGitHubBuild(refPath, branch string, ttl time.Duration, fetchFn func() (github.BuildStatus, error)) (github.BuildStatus, error)
+	GetTaskStats(workDir string, ttl time.Duration, fetchFn func() (tasks.Stats, error)) (tasks.Stats, error)
+	GetNextTask(workDir string, ttl time.Duration, fetchFn func() (string, error)) (string, error)
 	EnsureDir() error
 }
 
@@ -273,7 +275,8 @@ func (b *Builder) fetchTaskStats(data *template.StatusData) {
 		return
 	}
 
-	stats, err := b.taskProvider.GetStats()
+	ttl := time.Duration(b.config.TasksTTL) * time.Second
+	stats, err := b.cache.GetTaskStats(b.workDir, ttl, b.taskProvider.GetStats)
 	if err != nil {
 		slog.Debug("failed to get task stats", "err", err)
 		return
@@ -281,7 +284,8 @@ func (b *Builder) fetchTaskStats(data *template.StatusData) {
 
 	b.populateTaskStats(data, stats)
 
-	nextTask, err := b.taskProvider.GetNextTask()
+	// Get next task (cached with same TTL as stats)
+	nextTask, err := b.cache.GetNextTask(b.workDir, ttl, b.taskProvider.GetNextTask)
 	if err != nil {
 		slog.Debug("failed to get next task", "err", err)
 		return
