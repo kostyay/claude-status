@@ -19,12 +19,12 @@ type Metrics struct {
 
 // ContextConfig holds model-specific context limits.
 type ContextConfig struct {
-	MaxTokens    int64 // Maximum context window (1M for Sonnet 4.5 [1m], 200k otherwise)
+	MaxTokens    int64 // Maximum context window (1M for Opus 4.6/Sonnet 4.5/Sonnet 4 [1m], 200k otherwise)
 	UsableTokens int64 // Usable context before auto-compact (80% of max)
 }
 
 // GetContextConfig returns context limits based on model ID.
-// Only models with "[1m]" suffix have 1M context, all others have 200k.
+// Models with "[1m]" suffix (Opus 4.6, Sonnet 4.5, Sonnet 4) have 1M context, all others have 200k.
 func GetContextConfig(modelID string) ContextConfig {
 	if strings.Contains(strings.ToLower(modelID), "[1m]") {
 		return ContextConfig{

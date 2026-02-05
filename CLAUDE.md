@@ -39,7 +39,7 @@ The binary reads JSON from stdin containing model, workspace, version, and trans
 
 - Dependency injection via interfaces (Commander, HTTPClient, TokenGetter, Clock) for testing
 - Cache invalidation keyed on file mtimes: `.git/HEAD` for branch, `.git/index` for status
-- Model-aware context limits: 1M tokens for Sonnet 4.5 [1m], 200k for others
+- Model-aware context limits: 1M tokens for Opus 4.6/Sonnet 4.5/Sonnet 4 [1m], 200k for others
 
 ### File Locations (XDG)
 
