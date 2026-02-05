@@ -32,6 +32,18 @@ func TestGetContextConfig(t *testing.T) {
 			wantUsable: 800_000,
 		},
 		{
+			name:       "Opus 4.6 (200k default)",
+			modelID:    "claude-opus-4-6",
+			wantMax:    200_000,
+			wantUsable: 160_000,
+		},
+		{
+			name:       "Opus 4.6 with [1m] suffix",
+			modelID:    "claude-opus-4-6[1m]",
+			wantMax:    1_000_000,
+			wantUsable: 800_000,
+		},
+		{
 			name:       "Standard model",
 			modelID:    "claude-opus-4-5-20251101",
 			wantMax:    200_000,

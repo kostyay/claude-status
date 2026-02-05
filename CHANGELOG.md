@@ -1,5 +1,14 @@
 # Changelog
 
+## feat/debug-logging-remove-task-cache
+
+Debug logging for workspace diagnosis and task caching removal (#16).
+Stdin parsing now logs workDir, sessionID, and model to stderr for
+troubleshooting. Task results are fetched directly from providers instead
+of going through the cache layer, simplifying the data path. Context
+window documentation updated to reflect Opus 4.6 support alongside
+Sonnet 4.5 and Sonnet 4 for the [1m] beta.
+
 ## Unreleased
 
 ### Added

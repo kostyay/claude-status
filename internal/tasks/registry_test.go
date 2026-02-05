@@ -33,10 +33,10 @@ type mockProvider struct {
 	available bool
 }
 
-func (m *mockProvider) Name() string                    { return m.name }
-func (m *mockProvider) Available() bool                 { return m.available }
-func (m *mockProvider) GetStats() (Stats, error)        { return Stats{}, nil }
-func (m *mockProvider) GetNextTask() (string, error)    { return "", nil }
+func (m *mockProvider) Name() string                 { return m.name }
+func (m *mockProvider) Available() bool              { return m.available }
+func (m *mockProvider) GetStats() (Stats, error)     { return Stats{}, nil }
+func (m *mockProvider) GetNextTask() (string, error) { return "", nil }
 
 func TestSelectProvider_Priority(t *testing.T) {
 	// Save and restore original registry

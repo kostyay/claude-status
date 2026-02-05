@@ -51,7 +51,7 @@ func TestClient_GetStats(t *testing.T) {
 		{ID: "2", Subject: "Task 2", Status: "in_progress"},
 		{ID: "3", Subject: "Task 3", Status: "pending", BlockedBy: []string{"1"}}, // not blocked (1 is completed)
 		{ID: "4", Subject: "Task 4", Status: "pending", BlockedBy: []string{"2"}}, // blocked (2 is in_progress)
-		{ID: "5", Subject: "Task 5", Status: "pending"},                            // ready
+		{ID: "5", Subject: "Task 5", Status: "pending"},                           // ready
 	}
 
 	for i, task := range tasks {

@@ -98,6 +98,7 @@ func (c *Client) GetStats() (tasks.Stats, error) {
 		}
 	}
 
+	slog.Debug("kt stats result", "workDir", c.workDir, "total", stats.TotalIssues, "ready", stats.ReadyIssues)
 	return stats, nil
 }
 
