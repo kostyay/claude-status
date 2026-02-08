@@ -60,6 +60,17 @@ type StatusData struct {
 	ContextPct    float64 // Context percentage (0-100)
 	ContextPctUse float64 // Usable context percentage (0-100)
 
+	// Context window metadata
+	ContextWindowSize int64 // Max context window size in tokens (200k or 1M)
+	Exceeds200k       bool  // Whether total tokens exceed 200k threshold
+
+	// Cost metrics (from Claude Code stdin - use fmtCost/fmtDuration for display)
+	CostUSD             float64 // Session cost in USD
+	DurationMS          int64   // Total wall-clock duration in milliseconds
+	APIDurationMS       int64   // Total API response time in milliseconds
+	SessionLinesAdded   int     // Lines of code added in session (from cost data)
+	SessionLinesRemoved int     // Lines of code removed in session (from cost data)
+
 	// Task stats (raw values) - populated by claude, kt, tk, or beads
 	TaskProvider    string // Provider name: "claude", "kt", "tk", or "beads"
 	TaskListID      string // Task list ID (from CLAUDE_CODE_TASK_LIST_ID env var, empty if using session)
@@ -127,6 +138,22 @@ var funcs = template.FuncMap{
 			return fmt.Sprintf("+%d", n)
 		}
 		return fmt.Sprintf("%d", n)
+	},
+
+	// fmtCost formats a USD amount: 0.01234 -> "$0.01", 1.50 -> "$1.50"
+	"fmtCost": func(usd float64) string {
+		return fmt.Sprintf("$%.2f", usd)
+	},
+
+	// fmtDuration formats milliseconds to human-readable: 125000 -> "2m 5s"
+	"fmtDuration": func(ms int64) string {
+		totalSec := ms / 1000
+		mins := totalSec / 60
+		secs := totalSec % 60
+		if mins > 0 {
+			return fmt.Sprintf("%dm %ds", mins, secs)
+		}
+		return fmt.Sprintf("%ds", secs)
 	},
 }
 

@@ -24,11 +24,14 @@ import (
 
 // Input represents the JSON input from stdin.
 type Input struct {
-	Model          ModelInfo     `json:"model"`
-	Workspace      WorkspaceInfo `json:"workspace"`
-	Version        string        `json:"version"`
-	SessionID      string        `json:"session_id"`
-	TranscriptPath string        `json:"transcript_path"`
+	Model          ModelInfo          `json:"model"`
+	Workspace      WorkspaceInfo      `json:"workspace"`
+	Version        string             `json:"version"`
+	SessionID      string             `json:"session_id"`
+	TranscriptPath string             `json:"transcript_path"`
+	ContextWindow  *ContextWindowInfo `json:"context_window"`
+	Cost           *CostInfo          `json:"cost"`
+	Exceeds200k    bool               `json:"exceeds_200k_tokens"`
 }
 
 // ModelInfo contains information about the model.
@@ -40,6 +43,33 @@ type ModelInfo struct {
 // WorkspaceInfo contains workspace information.
 type WorkspaceInfo struct {
 	CurrentDir string `json:"current_dir"`
+}
+
+// ContextWindowInfo contains context window data provided by Claude Code.
+type ContextWindowInfo struct {
+	UsedPercentage      *float64          `json:"used_percentage"`
+	RemainingPercentage *float64          `json:"remaining_percentage"`
+	ContextWindowSize   int64             `json:"context_window_size"`
+	TotalInputTokens    int64             `json:"total_input_tokens"`
+	TotalOutputTokens   int64             `json:"total_output_tokens"`
+	CurrentUsage        *CurrentUsageInfo `json:"current_usage"`
+}
+
+// CurrentUsageInfo contains token counts from the last API call.
+type CurrentUsageInfo struct {
+	InputTokens              int64 `json:"input_tokens"`
+	OutputTokens             int64 `json:"output_tokens"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+}
+
+// CostInfo contains session cost data provided by Claude Code.
+type CostInfo struct {
+	TotalCostUSD       float64 `json:"total_cost_usd"`
+	TotalDurationMS    int64   `json:"total_duration_ms"`
+	TotalAPIDurationMS int64   `json:"total_api_duration_ms"`
+	TotalLinesAdded    int     `json:"total_lines_added"`
+	TotalLinesRemoved  int     `json:"total_lines_removed"`
 }
 
 // GitProvider is an interface for git operations.
@@ -145,6 +175,9 @@ func (b *Builder) Build(input Input) template.StatusData {
 	// Parse token metrics from transcript
 	b.populateTokenMetrics(&data, input)
 
+	// Populate cost metrics from Claude Code stdin
+	b.populateCostMetrics(&data, input)
+
 	// Get task stats (cached with TTL) - independent of git
 	b.fetchTaskStats(&data)
 
@@ -178,8 +211,54 @@ func (b *Builder) Build(input Input) template.StatusData {
 	return data
 }
 
-// populateTokenMetrics parses the transcript and populates token metrics.
+// populateTokenMetrics populates token metrics from context_window (preferred) or transcript (fallback).
 func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) {
+	// Prefer context_window data from Claude Code stdin when available
+	if input.ContextWindow != nil && input.ContextWindow.UsedPercentage != nil {
+		b.populateFromContextWindow(data, input)
+		return
+	}
+
+	// Fall back to transcript parsing
+	b.populateFromTranscript(data, input)
+}
+
+// autoCompactScaleFactor converts a percentage of the full context window to a percentage
+// of the usable context (80% auto-compact threshold). This matches the calculation in
+// tokens.GetContextConfig where UsableTokens = MaxTokens * 0.8.
+const autoCompactScaleFactor = 1.0 / 0.8 // 1.25
+
+// populateFromContextWindow uses pre-calculated context data from Claude Code.
+func (b *Builder) populateFromContextWindow(data *template.StatusData, input Input) {
+	cw := input.ContextWindow
+
+	data.ContextPct = *cw.UsedPercentage
+	data.ContextWindowSize = cw.ContextWindowSize
+
+	// Calculate usable percentage (against 80% auto-compact threshold)
+	usablePct := *cw.UsedPercentage * autoCompactScaleFactor
+	if usablePct > 100 {
+		usablePct = 100
+	}
+	data.ContextPctUse = usablePct
+
+	// Populate token metrics from current_usage if available
+	if cw.CurrentUsage != nil {
+		u := cw.CurrentUsage
+		data.TokensInput = u.InputTokens
+		data.TokensOutput = u.OutputTokens
+		data.TokensCached = u.CacheReadInputTokens + u.CacheCreationInputTokens
+		data.ContextLength = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+	}
+
+	// Use cumulative totals for total tokens
+	data.TokensTotal = cw.TotalInputTokens + cw.TotalOutputTokens
+
+	data.Exceeds200k = input.Exceeds200k
+}
+
+// populateFromTranscript parses the transcript JSONL file for token metrics.
+func (b *Builder) populateFromTranscript(data *template.StatusData, input Input) {
 	if input.TranscriptPath == "" {
 		return
 	}
@@ -201,6 +280,19 @@ func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) {
 	data.ContextLength = metrics.ContextLength
 	data.ContextPct = metrics.ContextPercentage(ctxCfg)
 	data.ContextPctUse = metrics.ContextPercentageUsable(ctxCfg)
+}
+
+// populateCostMetrics populates cost data from Claude Code stdin.
+func (b *Builder) populateCostMetrics(data *template.StatusData, input Input) {
+	if input.Cost == nil {
+		return
+	}
+
+	data.CostUSD = input.Cost.TotalCostUSD
+	data.DurationMS = input.Cost.TotalDurationMS
+	data.APIDurationMS = input.Cost.TotalAPIDurationMS
+	data.SessionLinesAdded = input.Cost.TotalLinesAdded
+	data.SessionLinesRemoved = input.Cost.TotalLinesRemoved
 }
 
 // populateDiffStats populates git diff statistics into StatusData.

@@ -667,6 +667,256 @@ func TestSetPrefix_Empty(t *testing.T) {
 	}
 }
 
+func TestBuild_ContextWindowFromStdin(t *testing.T) {
+	tests := []struct {
+		name          string
+		contextWindow *ContextWindowInfo
+		wantPct       float64
+		wantPctUse    float64
+		wantInput     int64
+		wantOutput    int64
+		wantCached    int64
+		wantCtxSize   int64
+	}{
+		{
+			name: "full context_window data",
+			contextWindow: &ContextWindowInfo{
+				UsedPercentage:      ptrFloat64(14.1),
+				RemainingPercentage: ptrFloat64(85.9),
+				ContextWindowSize:   1_000_000,
+				TotalInputTokens:    15234,
+				TotalOutputTokens:   4521,
+				CurrentUsage: &CurrentUsageInfo{
+					InputTokens:              8500,
+					OutputTokens:             1200,
+					CacheCreationInputTokens: 5000,
+					CacheReadInputTokens:     2000,
+				},
+			},
+			wantPct:     14.1,
+			wantPctUse:  17.625, // 14.1 * 1.25
+			wantInput:   8500,
+			wantOutput:  1200,
+			wantCached:  7000, // 5000 + 2000
+			wantCtxSize: 1_000_000,
+		},
+		{
+			name: "200k context window",
+			contextWindow: &ContextWindowInfo{
+				UsedPercentage:    ptrFloat64(50.0),
+				ContextWindowSize: 200_000,
+			},
+			wantPct:     50.0,
+			wantPctUse:  62.5, // 50 * 1.25
+			wantCtxSize: 200_000,
+		},
+		{
+			name: "no current_usage (null before first API call)",
+			contextWindow: &ContextWindowInfo{
+				UsedPercentage:    ptrFloat64(8.0),
+				ContextWindowSize: 200_000,
+				CurrentUsage:      nil,
+			},
+			wantPct:     8.0,
+			wantPctUse:  10.0, // 8 * 1.25
+			wantCtxSize: 200_000,
+		},
+		{
+			name: "high usage caps usable at 100",
+			contextWindow: &ContextWindowInfo{
+				UsedPercentage:    ptrFloat64(90.0),
+				ContextWindowSize: 200_000,
+			},
+			wantPct:     90.0,
+			wantPctUse:  100.0, // 90 * 1.25 = 112.5, capped at 100
+			wantCtxSize: 200_000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Default()
+			cache := &mockCacheProvider{}
+			builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+
+			input := Input{
+				Model:         ModelInfo{DisplayName: "Claude"},
+				Workspace:     WorkspaceInfo{CurrentDir: "/project"},
+				ContextWindow: tt.contextWindow,
+			}
+
+			data := builder.Build(input)
+
+			if data.ContextPct != tt.wantPct {
+				t.Errorf("ContextPct = %v, want %v", data.ContextPct, tt.wantPct)
+			}
+			if data.ContextPctUse != tt.wantPctUse {
+				t.Errorf("ContextPctUse = %v, want %v", data.ContextPctUse, tt.wantPctUse)
+			}
+			if data.TokensInput != tt.wantInput {
+				t.Errorf("TokensInput = %d, want %d", data.TokensInput, tt.wantInput)
+			}
+			if data.TokensOutput != tt.wantOutput {
+				t.Errorf("TokensOutput = %d, want %d", data.TokensOutput, tt.wantOutput)
+			}
+			if data.TokensCached != tt.wantCached {
+				t.Errorf("TokensCached = %d, want %d", data.TokensCached, tt.wantCached)
+			}
+			if data.ContextWindowSize != tt.wantCtxSize {
+				t.Errorf("ContextWindowSize = %d, want %d", data.ContextWindowSize, tt.wantCtxSize)
+			}
+		})
+	}
+}
+
+func TestBuild_ContextWindowNullPercentage(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+
+	// context_window present but used_percentage is null (early in session)
+	input := Input{
+		Model:     ModelInfo{DisplayName: "Claude"},
+		Workspace: WorkspaceInfo{CurrentDir: "/project"},
+		ContextWindow: &ContextWindowInfo{
+			UsedPercentage:    nil,
+			ContextWindowSize: 200_000,
+		},
+	}
+
+	data := builder.Build(input)
+
+	// Should fall through to transcript parsing (which returns 0 with no transcript)
+	if data.ContextPct != 0 {
+		t.Errorf("ContextPct = %v, want 0 (null percentage should fallback)", data.ContextPct)
+	}
+}
+
+func TestBuild_ContextWindowFallback(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+
+	// Create a transcript file for fallback
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/transcript.jsonl"
+	jsonlContent := `{"type":"summary","summary":"Test session"}
+{"parentUuid":"123","isSidechain":false,"type":"assistant","message":{"role":"assistant","usage":{"input_tokens":10000,"output_tokens":5000,"cache_read_input_tokens":30000,"cache_creation_input_tokens":5000}}}
+`
+	if err := writeTestFile(transcriptPath, jsonlContent); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// No context_window — should fall back to transcript
+	input := Input{
+		Model:          ModelInfo{ID: "claude-opus-4-5-20251101", DisplayName: "Claude"},
+		Workspace:      WorkspaceInfo{CurrentDir: "/project"},
+		TranscriptPath: transcriptPath,
+	}
+
+	data := builder.Build(input)
+
+	// Should have token data from transcript
+	if data.TokensInput != 10000 {
+		t.Errorf("TokensInput = %d, want 10000 (from transcript fallback)", data.TokensInput)
+	}
+	if data.ContextPct == 0 {
+		t.Error("ContextPct should not be zero (transcript has data)")
+	}
+}
+
+func TestBuild_CostMetrics(t *testing.T) {
+	tests := []struct {
+		name         string
+		cost         *CostInfo
+		wantCostUSD  float64
+		wantDuration int64
+		wantAPIDur   int64
+		wantAdded    int
+		wantRemoved  int
+	}{
+		{
+			name: "full cost data",
+			cost: &CostInfo{
+				TotalCostUSD:       0.05,
+				TotalDurationMS:    125000,
+				TotalAPIDurationMS: 2300,
+				TotalLinesAdded:    156,
+				TotalLinesRemoved:  23,
+			},
+			wantCostUSD:  0.05,
+			wantDuration: 125000,
+			wantAPIDur:   2300,
+			wantAdded:    156,
+			wantRemoved:  23,
+		},
+		{
+			name:         "nil cost (not provided)",
+			cost:         nil,
+			wantCostUSD:  0,
+			wantDuration: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Default()
+			cache := &mockCacheProvider{}
+			builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+
+			input := Input{
+				Model:     ModelInfo{DisplayName: "Claude"},
+				Workspace: WorkspaceInfo{CurrentDir: "/project"},
+				Cost:      tt.cost,
+			}
+
+			data := builder.Build(input)
+
+			if data.CostUSD != tt.wantCostUSD {
+				t.Errorf("CostUSD = %v, want %v", data.CostUSD, tt.wantCostUSD)
+			}
+			if data.DurationMS != tt.wantDuration {
+				t.Errorf("DurationMS = %d, want %d", data.DurationMS, tt.wantDuration)
+			}
+			if data.APIDurationMS != tt.wantAPIDur {
+				t.Errorf("APIDurationMS = %d, want %d", data.APIDurationMS, tt.wantAPIDur)
+			}
+			if data.SessionLinesAdded != tt.wantAdded {
+				t.Errorf("LinesAdded = %d, want %d", data.SessionLinesAdded, tt.wantAdded)
+			}
+			if data.SessionLinesRemoved != tt.wantRemoved {
+				t.Errorf("LinesRemoved = %d, want %d", data.SessionLinesRemoved, tt.wantRemoved)
+			}
+		})
+	}
+}
+
+func TestBuild_Exceeds200k(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+
+	input := Input{
+		Model:       ModelInfo{DisplayName: "Claude"},
+		Workspace:   WorkspaceInfo{CurrentDir: "/project"},
+		Exceeds200k: true,
+		ContextWindow: &ContextWindowInfo{
+			UsedPercentage:    ptrFloat64(25.0),
+			ContextWindowSize: 1_000_000,
+		},
+	}
+
+	data := builder.Build(input)
+
+	if !data.Exceeds200k {
+		t.Error("Exceeds200k should be true")
+	}
+}
+
+func ptrFloat64(f float64) *float64 {
+	return &f
+}
+
 func TestBuild_TasksZeroValues(t *testing.T) {
 	cfg := config.Default()
 

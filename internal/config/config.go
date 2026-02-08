@@ -16,6 +16,10 @@ const DefaultTemplate = `{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{
 // Usage: set "template" in config.json to this value.
 const TemplateWithTokens = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{fmtTokens .TokensInput}} Out:{{fmtTokens .TokensOutput}} Cache:{{fmtTokens .TokensCached}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}`
 
+// TemplateWithCost is an example template that shows session cost and duration.
+// Usage: set "template" in config.json to this value.
+const TemplateWithCost = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .CostUSD}} | {{yellow}}💰 {{fmtCost .CostUSD}}{{reset}}{{end}}{{if .DurationMS}} | ⏱️ {{fmtDuration .DurationMS}}{{end}}`
+
 // TemplateWithTasks is an example template that shows task stats (beads/tk/kt).
 // Usage: set "template" in config.json to this value.
 const TemplateWithTasks = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .TasksReady}} | {{yellow}}📋 {{.TaskProvider}}: {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{if .TasksNextTask}}. Next Up: {{.TasksNextTask}}{{end}}{{end}}`
