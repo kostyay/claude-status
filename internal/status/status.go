@@ -31,7 +31,6 @@ type Input struct {
 	TranscriptPath string             `json:"transcript_path"`
 	ContextWindow  *ContextWindowInfo `json:"context_window"`
 	Cost           *CostInfo          `json:"cost"`
-	Exceeds200k    bool               `json:"exceeds_200k_tokens"`
 }
 
 // ModelInfo contains information about the model.
@@ -68,8 +67,6 @@ type CostInfo struct {
 	TotalCostUSD       float64 `json:"total_cost_usd"`
 	TotalDurationMS    int64   `json:"total_duration_ms"`
 	TotalAPIDurationMS int64   `json:"total_api_duration_ms"`
-	TotalLinesAdded    int     `json:"total_lines_added"`
-	TotalLinesRemoved  int     `json:"total_lines_removed"`
 }
 
 // GitProvider is an interface for git operations.
@@ -254,7 +251,6 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 	// Use cumulative totals for total tokens
 	data.TokensTotal = cw.TotalInputTokens + cw.TotalOutputTokens
 
-	data.Exceeds200k = input.Exceeds200k
 }
 
 // populateFromTranscript parses the transcript JSONL file for token metrics.
@@ -291,8 +287,6 @@ func (b *Builder) populateCostMetrics(data *template.StatusData, input Input) {
 	data.CostUSD = input.Cost.TotalCostUSD
 	data.DurationMS = input.Cost.TotalDurationMS
 	data.APIDurationMS = input.Cost.TotalAPIDurationMS
-	data.SessionLinesAdded = input.Cost.TotalLinesAdded
-	data.SessionLinesRemoved = input.Cost.TotalLinesRemoved
 }
 
 // populateDiffStats populates git diff statistics into StatusData.

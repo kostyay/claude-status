@@ -62,14 +62,11 @@ type StatusData struct {
 
 	// Context window metadata
 	ContextWindowSize int64 // Max context window size in tokens (200k or 1M)
-	Exceeds200k       bool  // Whether total tokens exceed 200k threshold
 
 	// Cost metrics (from Claude Code stdin - use fmtCost/fmtDuration for display)
-	CostUSD             float64 // Session cost in USD
-	DurationMS          int64   // Total wall-clock duration in milliseconds
-	APIDurationMS       int64   // Total API response time in milliseconds
-	SessionLinesAdded   int     // Lines of code added in session (from cost data)
-	SessionLinesRemoved int     // Lines of code removed in session (from cost data)
+	CostUSD       float64 // Session cost in USD
+	DurationMS    int64   // Total wall-clock duration in milliseconds
+	APIDurationMS int64   // Total API response time in milliseconds
 
 	// Task stats (raw values) - populated by claude, kt, tk, or beads
 	TaskProvider    string // Provider name: "claude", "kt", "tk", or "beads"

@@ -25,9 +25,6 @@
   "cost": {
     "total_cost_usd": 0.01234,
     "total_duration_ms": 45000,
-    "total_api_duration_ms": 2300,
-    "total_lines_added": 156,
-    "total_lines_removed": 23
-  },
-  "exceeds_200k_tokens": false
+    "total_api_duration_ms": 2300
+  }
 }

@@ -832,8 +832,6 @@ func TestBuild_CostMetrics(t *testing.T) {
 		wantCostUSD  float64
 		wantDuration int64
 		wantAPIDur   int64
-		wantAdded    int
-		wantRemoved  int
 	}{
 		{
 			name: "full cost data",
@@ -841,14 +839,10 @@ func TestBuild_CostMetrics(t *testing.T) {
 				TotalCostUSD:       0.05,
 				TotalDurationMS:    125000,
 				TotalAPIDurationMS: 2300,
-				TotalLinesAdded:    156,
-				TotalLinesRemoved:  23,
 			},
 			wantCostUSD:  0.05,
 			wantDuration: 125000,
 			wantAPIDur:   2300,
-			wantAdded:    156,
-			wantRemoved:  23,
 		},
 		{
 			name:         "nil cost (not provided)",
@@ -881,35 +875,7 @@ func TestBuild_CostMetrics(t *testing.T) {
 			if data.APIDurationMS != tt.wantAPIDur {
 				t.Errorf("APIDurationMS = %d, want %d", data.APIDurationMS, tt.wantAPIDur)
 			}
-			if data.SessionLinesAdded != tt.wantAdded {
-				t.Errorf("LinesAdded = %d, want %d", data.SessionLinesAdded, tt.wantAdded)
-			}
-			if data.SessionLinesRemoved != tt.wantRemoved {
-				t.Errorf("LinesRemoved = %d, want %d", data.SessionLinesRemoved, tt.wantRemoved)
-			}
 		})
-	}
-}
-
-func TestBuild_Exceeds200k(t *testing.T) {
-	cfg := config.Default()
-	cache := &mockCacheProvider{}
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-
-	input := Input{
-		Model:       ModelInfo{DisplayName: "Claude"},
-		Workspace:   WorkspaceInfo{CurrentDir: "/project"},
-		Exceeds200k: true,
-		ContextWindow: &ContextWindowInfo{
-			UsedPercentage:    ptrFloat64(25.0),
-			ContextWindowSize: 1_000_000,
-		},
-	}
-
-	data := builder.Build(input)
-
-	if !data.Exceeds200k {
-		t.Error("Exceeds200k should be true")
 	}
 }
 
