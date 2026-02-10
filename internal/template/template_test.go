@@ -429,6 +429,9 @@ func TestFmtDurationFunction(t *testing.T) {
 		{"one minute", 60000, "1m 0s"},
 		{"two minutes five seconds", 125000, "2m 5s"},
 		{"ten minutes", 600000, "10m 0s"},
+		{"one hour", 3600000, "1h 0m"},
+		{"one hour thirty minutes", 5400000, "1h 30m"},
+		{"two hours five minutes", 7500000, "2h 5m"},
 	}
 
 	for _, tt := range tests {
@@ -453,15 +456,17 @@ func TestFmtDurationFunction(t *testing.T) {
 }
 
 func TestRender_CostTemplate(t *testing.T) {
-	tmpl := `{{if .CostUSD}}💰 {{fmtCost .CostUSD}}{{end}}{{if .DurationMS}} | ⏱️ {{fmtDuration .DurationMS}}{{end}}`
+	tmpl := `{{if .CostUSD}}💰 {{fmtCost .CostUSD}}{{end}}{{if .DurationMS}} | ⏱️ {{fmtDuration .DurationMS}}{{end}}{{if .CostLinesAdded}} | {{fmtSigned .CostLinesAdded}}/{{fmtSigned .CostLinesRemoved}}{{end}}`
 	engine, err := NewEngine(tmpl)
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 
 	data := StatusData{
-		CostUSD:    0.05,
-		DurationMS: 125000,
+		CostUSD:          0.05,
+		DurationMS:       125000,
+		CostLinesAdded:   42,
+		CostLinesRemoved: -15,
 	}
 
 	result, err := engine.Render(data)
@@ -474,5 +479,8 @@ func TestRender_CostTemplate(t *testing.T) {
 	}
 	if !strings.Contains(result, "⏱️ 2m 5s") {
 		t.Errorf("Missing duration, got: %q", result)
+	}
+	if !strings.Contains(result, "+42/-15") {
+		t.Errorf("Missing lines added/removed, got: %q", result)
 	}
 }

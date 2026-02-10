@@ -67,6 +67,8 @@ type CostInfo struct {
 	TotalCostUSD       float64 `json:"total_cost_usd"`
 	TotalDurationMS    int64   `json:"total_duration_ms"`
 	TotalAPIDurationMS int64   `json:"total_api_duration_ms"`
+	TotalLinesAdded    int     `json:"total_lines_added"`
+	TotalLinesRemoved  int     `json:"total_lines_removed"`
 }
 
 // GitProvider is an interface for git operations.
@@ -173,7 +175,13 @@ func (b *Builder) Build(input Input) template.StatusData {
 	b.populateTokenMetrics(&data, input)
 
 	// Populate cost metrics from Claude Code stdin
-	b.populateCostMetrics(&data, input)
+	if input.Cost != nil {
+		data.CostUSD = input.Cost.TotalCostUSD
+		data.DurationMS = input.Cost.TotalDurationMS
+		data.APIDurationMS = input.Cost.TotalAPIDurationMS
+		data.CostLinesAdded = input.Cost.TotalLinesAdded
+		data.CostLinesRemoved = input.Cost.TotalLinesRemoved
+	}
 
 	// Get task stats (cached with TTL) - independent of git
 	b.fetchTaskStats(&data)
@@ -220,11 +228,6 @@ func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) {
 	b.populateFromTranscript(data, input)
 }
 
-// autoCompactScaleFactor converts a percentage of the full context window to a percentage
-// of the usable context (80% auto-compact threshold). This matches the calculation in
-// tokens.GetContextConfig where UsableTokens = MaxTokens * 0.8.
-const autoCompactScaleFactor = 1.0 / 0.8 // 1.25
-
 // populateFromContextWindow uses pre-calculated context data from Claude Code.
 func (b *Builder) populateFromContextWindow(data *template.StatusData, input Input) {
 	cw := input.ContextWindow
@@ -232,12 +235,8 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 	data.ContextPct = *cw.UsedPercentage
 	data.ContextWindowSize = cw.ContextWindowSize
 
-	// Calculate usable percentage (against 80% auto-compact threshold)
-	usablePct := *cw.UsedPercentage * autoCompactScaleFactor
-	if usablePct > 100 {
-		usablePct = 100
-	}
-	data.ContextPctUse = usablePct
+	// Scale to usable context (auto-compact threshold)
+	data.ContextPctUse = min(*cw.UsedPercentage/tokens.AutoCompactThreshold, 100)
 
 	// Populate token metrics from current_usage if available
 	if cw.CurrentUsage != nil {
@@ -248,9 +247,8 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 		data.ContextLength = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
 	}
 
-	// Use cumulative totals for total tokens
+	// Use cumulative totals for total tokens (session-cumulative, not per-call)
 	data.TokensTotal = cw.TotalInputTokens + cw.TotalOutputTokens
-
 }
 
 // populateFromTranscript parses the transcript JSONL file for token metrics.
@@ -276,17 +274,6 @@ func (b *Builder) populateFromTranscript(data *template.StatusData, input Input)
 	data.ContextLength = metrics.ContextLength
 	data.ContextPct = metrics.ContextPercentage(ctxCfg)
 	data.ContextPctUse = metrics.ContextPercentageUsable(ctxCfg)
-}
-
-// populateCostMetrics populates cost data from Claude Code stdin.
-func (b *Builder) populateCostMetrics(data *template.StatusData, input Input) {
-	if input.Cost == nil {
-		return
-	}
-
-	data.CostUSD = input.Cost.TotalCostUSD
-	data.DurationMS = input.Cost.TotalDurationMS
-	data.APIDurationMS = input.Cost.TotalAPIDurationMS
 }
 
 // populateDiffStats populates git diff statistics into StatusData.
