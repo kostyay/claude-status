@@ -384,3 +384,103 @@ func TestRender_ContextPercentageWithColor(t *testing.T) {
 		t.Error("Missing reset code")
 	}
 }
+
+func TestFmtCostFunction(t *testing.T) {
+	tests := []struct {
+		name string
+		usd  float64
+		want string
+	}{
+		{"zero", 0, "$0.00"},
+		{"small amount", 0.01234, "$0.01"},
+		{"one dollar fifty", 1.5, "$1.50"},
+		{"larger amount", 12.345, "$12.35"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpl := `{{fmtCost .CostUSD}}`
+			engine, err := NewEngine(tmpl)
+			if err != nil {
+				t.Fatalf("NewEngine() error = %v", err)
+			}
+
+			data := StatusData{CostUSD: tt.usd}
+			result, err := engine.Render(data)
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+
+			if result != tt.want {
+				t.Errorf("fmtCost(%v) = %q, want %q", tt.usd, result, tt.want)
+			}
+		})
+	}
+}
+
+func TestFmtDurationFunction(t *testing.T) {
+	tests := []struct {
+		name string
+		ms   int64
+		want string
+	}{
+		{"zero", 0, "0s"},
+		{"five seconds", 5000, "5s"},
+		{"one minute", 60000, "1m 0s"},
+		{"two minutes five seconds", 125000, "2m 5s"},
+		{"ten minutes", 600000, "10m 0s"},
+		{"one hour", 3600000, "1h 0m"},
+		{"one hour thirty minutes", 5400000, "1h 30m"},
+		{"two hours five minutes", 7500000, "2h 5m"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpl := `{{fmtDuration .DurationMS}}`
+			engine, err := NewEngine(tmpl)
+			if err != nil {
+				t.Fatalf("NewEngine() error = %v", err)
+			}
+
+			data := StatusData{DurationMS: tt.ms}
+			result, err := engine.Render(data)
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+
+			if result != tt.want {
+				t.Errorf("fmtDuration(%v) = %q, want %q", tt.ms, result, tt.want)
+			}
+		})
+	}
+}
+
+func TestRender_CostTemplate(t *testing.T) {
+	tmpl := `{{if .CostUSD}}💰 {{fmtCost .CostUSD}}{{end}}{{if .DurationMS}} | ⏱️ {{fmtDuration .DurationMS}}{{end}}{{if .CostLinesAdded}} | {{fmtSigned .CostLinesAdded}}/{{fmtSigned .CostLinesRemoved}}{{end}}`
+	engine, err := NewEngine(tmpl)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	data := StatusData{
+		CostUSD:          0.05,
+		DurationMS:       125000,
+		CostLinesAdded:   42,
+		CostLinesRemoved: -15,
+	}
+
+	result, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	if !strings.Contains(result, "💰 $0.05") {
+		t.Errorf("Missing cost, got: %q", result)
+	}
+	if !strings.Contains(result, "⏱️ 2m 5s") {
+		t.Errorf("Missing duration, got: %q", result)
+	}
+	if !strings.Contains(result, "+42/-15") {
+		t.Errorf("Missing lines added/removed, got: %q", result)
+	}
+}

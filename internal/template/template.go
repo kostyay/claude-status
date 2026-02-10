@@ -52,13 +52,25 @@ type StatusData struct {
 	GitUnstagedFiles int // Unstaged files count
 
 	// Token metrics (raw values - use fmtTokens for display)
-	TokensInput   int64   // Input tokens
-	TokensOutput  int64   // Output tokens
-	TokensCached  int64   // Cached tokens
-	TokensTotal   int64   // Total tokens
+	// TokensInput, TokensOutput, TokensCached are per-call (last API call only).
+	// TokensTotal is session-cumulative (sum across all API calls).
+	TokensInput   int64   // Input tokens (per-call)
+	TokensOutput  int64   // Output tokens (per-call)
+	TokensCached  int64   // Cached tokens (per-call)
+	TokensTotal   int64   // Total tokens (session-cumulative)
 	ContextLength int64   // Current context length
 	ContextPct    float64 // Context percentage (0-100)
 	ContextPctUse float64 // Usable context percentage (0-100)
+
+	// Context window metadata
+	ContextWindowSize int64 // Max context window size in tokens (200k or 1M)
+
+	// Cost metrics (from Claude Code stdin - use fmtCost/fmtDuration/fmtSigned for display)
+	CostUSD          float64 // Session cost in USD
+	DurationMS       int64   // Total wall-clock duration in milliseconds
+	APIDurationMS    int64   // Total API response time in milliseconds
+	CostLinesAdded   int     // Total lines added in session
+	CostLinesRemoved int     // Total lines removed in session
 
 	// Task stats (raw values) - populated by claude, kt, tk, or beads
 	TaskProvider    string // Provider name: "claude", "kt", "tk", or "beads"
@@ -127,6 +139,26 @@ var funcs = template.FuncMap{
 			return fmt.Sprintf("+%d", n)
 		}
 		return fmt.Sprintf("%d", n)
+	},
+
+	// fmtCost formats a USD amount: 0.01234 -> "$0.01", 1.50 -> "$1.50"
+	"fmtCost": func(usd float64) string {
+		return fmt.Sprintf("$%.2f", usd)
+	},
+
+	// fmtDuration formats milliseconds to human-readable: 125000 -> "2m 5s", 7500000 -> "2h 5m"
+	"fmtDuration": func(ms int64) string {
+		totalSec := ms / 1000
+		hours := totalSec / 3600
+		mins := (totalSec % 3600) / 60
+		secs := totalSec % 60
+		if hours > 0 {
+			return fmt.Sprintf("%dh %dm", hours, mins)
+		}
+		if mins > 0 {
+			return fmt.Sprintf("%dm %ds", mins, secs)
+		}
+		return fmt.Sprintf("%ds", secs)
 	},
 }
 

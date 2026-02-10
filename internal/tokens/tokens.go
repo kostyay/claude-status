@@ -17,10 +17,15 @@ type Metrics struct {
 	ContextLength int64 // Current context window size (last message's input + cache)
 }
 
+// AutoCompactThreshold is the fraction of the context window at which Claude Code
+// triggers auto-compaction. Used to derive UsableTokens and to scale used_percentage
+// from the stdin context_window data.
+const AutoCompactThreshold = 0.8
+
 // ContextConfig holds model-specific context limits.
 type ContextConfig struct {
 	MaxTokens    int64 // Maximum context window (1M for Opus 4.6/Sonnet 4.5/Sonnet 4 [1m], 200k otherwise)
-	UsableTokens int64 // Usable context before auto-compact (80% of max)
+	UsableTokens int64 // Usable context before auto-compact (AutoCompactThreshold of max)
 }
 
 // GetContextConfig returns context limits based on model ID.
@@ -29,12 +34,12 @@ func GetContextConfig(modelID string) ContextConfig {
 	if strings.Contains(strings.ToLower(modelID), "[1m]") {
 		return ContextConfig{
 			MaxTokens:    1_000_000,
-			UsableTokens: 800_000, // 80% of 1M
+			UsableTokens: int64(1_000_000 * AutoCompactThreshold),
 		}
 	}
 	return ContextConfig{
 		MaxTokens:    200_000,
-		UsableTokens: 160_000, // 80% of 200k
+		UsableTokens: int64(200_000 * AutoCompactThreshold),
 	}
 }
 
