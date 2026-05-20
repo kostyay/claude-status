@@ -9,7 +9,7 @@ import (
 // DefaultTemplate is the default Go template for the status line.
 // All values are raw numbers; use fmtTokens, fmtPct, fmtSigned for formatting.
 // Prefix color is set via --prefix-color flag (defaults to cyan if prefix is set).
-const DefaultTemplate = `{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .TasksReady}}
+const DefaultTemplate = `{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .PRNumber}} | {{magenta}}{{link .PRURL (printf "%s #%d" (prEmoji .PRReviewState) .PRNumber)}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .TasksReady}}
 {{yellow}}📋 {{.TaskProvider}}: {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{if .TasksNextTask}}. Next Up: {{.TasksNextTask}}{{end}}{{end}}`
 
 // TemplateWithTokens is an example template that shows all token metrics.
@@ -20,7 +20,7 @@ const TemplateWithTokens = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}
 // Usage: set "template" in config.json to this value.
 const TemplateWithCost = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .CostUSD}} | {{yellow}}💰 {{fmtCost .CostUSD}}{{reset}}{{end}}{{if .DurationMS}} | ⏱️ {{fmtDuration .DurationMS}}{{end}}`
 
-// TemplateWithTasks is an example template that shows task stats (beads/tk/kt).
+// TemplateWithTasks is an example template that shows task stats (kt/tk/claude).
 // Usage: set "template" in config.json to this value.
 const TemplateWithTasks = `{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .TasksReady}} | {{yellow}}📋 {{.TaskProvider}}: {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{if .TasksNextTask}}. Next Up: {{.TasksNextTask}}{{end}}{{end}}`
 

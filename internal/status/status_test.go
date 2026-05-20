@@ -9,6 +9,7 @@ import (
 	"github.com/kostyay/claude-status/internal/config"
 	"github.com/kostyay/claude-status/internal/git"
 	"github.com/kostyay/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/pricing"
 	"github.com/kostyay/claude-status/internal/tasks"
 )
 
@@ -881,6 +882,85 @@ func TestBuild_CostMetrics(t *testing.T) {
 
 func ptrFloat64(f float64) *float64 {
 	return &f
+}
+
+func TestBuild_CostFallbackFromPricing(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{
+		"claude-opus-4-7": {Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
+	}))
+
+	pct := 10.0
+	input := Input{
+		Model:     ModelInfo{ID: "claude-opus-4-7", DisplayName: "Opus"},
+		Workspace: WorkspaceInfo{CurrentDir: "/p"},
+		ContextWindow: &ContextWindowInfo{
+			UsedPercentage:    &pct,
+			ContextWindowSize: 200_000,
+			CurrentUsage: &CurrentUsageInfo{
+				InputTokens:              1_000_000,
+				OutputTokens:             500_000,
+				CacheReadInputTokens:     2_000_000,
+				CacheCreationInputTokens: 100_000,
+			},
+		},
+	}
+
+	data := builder.Build(input)
+
+	// 1M*5 + 0.5M*25 + 2M*0.5 + 0.1M*6.25 = 19.125
+	if data.CostUSD != 19.125 {
+		t.Errorf("CostUSD = %v, want 19.125", data.CostUSD)
+	}
+}
+
+func TestBuild_StdinCostBeatsPricing(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{
+		"claude-opus-4-7": {Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
+	}))
+
+	pct := 10.0
+	input := Input{
+		Model:     ModelInfo{ID: "claude-opus-4-7", DisplayName: "Opus"},
+		Workspace: WorkspaceInfo{CurrentDir: "/p"},
+		Cost:      &CostInfo{TotalCostUSD: 0.05},
+		ContextWindow: &ContextWindowInfo{
+			UsedPercentage: &pct,
+			CurrentUsage:   &CurrentUsageInfo{InputTokens: 1_000_000},
+		},
+	}
+
+	data := builder.Build(input)
+	if data.CostUSD != 0.05 {
+		t.Errorf("CostUSD = %v, want 0.05 (stdin should win)", data.CostUSD)
+	}
+}
+
+func TestBuild_NoPricingWhenUnknownModel(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{}))
+
+	pct := 10.0
+	input := Input{
+		Model:     ModelInfo{ID: "unknown-model"},
+		Workspace: WorkspaceInfo{CurrentDir: "/p"},
+		ContextWindow: &ContextWindowInfo{
+			UsedPercentage: &pct,
+			CurrentUsage:   &CurrentUsageInfo{InputTokens: 1_000_000},
+		},
+	}
+
+	data := builder.Build(input)
+	if data.CostUSD != 0 {
+		t.Errorf("CostUSD = %v, want 0 (unknown model)", data.CostUSD)
+	}
 }
 
 func TestBuild_TasksZeroValues(t *testing.T) {

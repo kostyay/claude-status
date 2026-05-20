@@ -11,26 +11,37 @@ import (
 	"github.com/kostyay/claude-status/internal/config"
 	"github.com/kostyay/claude-status/internal/git"
 	"github.com/kostyay/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/pricing"
 	"github.com/kostyay/claude-status/internal/tasks"
 	"github.com/kostyay/claude-status/internal/template"
 	"github.com/kostyay/claude-status/internal/tokens"
 
 	// Task providers (priority controlled by RegisterWithPriority, not import order)
-	_ "github.com/kostyay/claude-status/internal/beads"
 	_ "github.com/kostyay/claude-status/internal/claudetasks"
 	_ "github.com/kostyay/claude-status/internal/kt"
 	_ "github.com/kostyay/claude-status/internal/tk"
 )
 
 // Input represents the JSON input from stdin.
+// See https://code.claude.com/docs/en/statusline for the full schema.
 type Input struct {
-	Model          ModelInfo          `json:"model"`
-	Workspace      WorkspaceInfo      `json:"workspace"`
-	Version        string             `json:"version"`
-	SessionID      string             `json:"session_id"`
-	TranscriptPath string             `json:"transcript_path"`
-	ContextWindow  *ContextWindowInfo `json:"context_window"`
-	Cost           *CostInfo          `json:"cost"`
+	Model             ModelInfo          `json:"model"`
+	Workspace         WorkspaceInfo      `json:"workspace"`
+	Version           string             `json:"version"`
+	SessionID         string             `json:"session_id"`
+	SessionName       string             `json:"session_name"`
+	TranscriptPath    string             `json:"transcript_path"`
+	ContextWindow     *ContextWindowInfo `json:"context_window"`
+	Cost              *CostInfo          `json:"cost"`
+	Exceeds200kTokens bool               `json:"exceeds_200k_tokens"`
+	OutputStyle       *OutputStyleInfo   `json:"output_style"`
+	Effort            *EffortInfo        `json:"effort"`
+	Thinking          *ThinkingInfo      `json:"thinking"`
+	RateLimits        *RateLimitsInfo    `json:"rate_limits"`
+	Vim               *VimInfo           `json:"vim"`
+	Agent             *AgentInfo         `json:"agent"`
+	PR                *PRInfo            `json:"pr"`
+	Worktree          *WorktreeInfo      `json:"worktree"`
 }
 
 // ModelInfo contains information about the model.
@@ -41,7 +52,71 @@ type ModelInfo struct {
 
 // WorkspaceInfo contains workspace information.
 type WorkspaceInfo struct {
-	CurrentDir string `json:"current_dir"`
+	CurrentDir  string    `json:"current_dir"`
+	ProjectDir  string    `json:"project_dir"`
+	AddedDirs   []string  `json:"added_dirs"`
+	GitWorktree string    `json:"git_worktree"`
+	Repo        *RepoInfo `json:"repo"`
+}
+
+// RepoInfo contains repository identity parsed from the origin remote.
+type RepoInfo struct {
+	Host  string `json:"host"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+}
+
+// OutputStyleInfo contains the active output style.
+type OutputStyleInfo struct {
+	Name string `json:"name"`
+}
+
+// EffortInfo contains the reasoning effort level.
+type EffortInfo struct {
+	Level string `json:"level"`
+}
+
+// ThinkingInfo contains extended thinking state.
+type ThinkingInfo struct {
+	Enabled bool `json:"enabled"`
+}
+
+// RateLimitsInfo contains Pro/Max rate-limit usage windows.
+type RateLimitsInfo struct {
+	FiveHour *RateLimitWindow `json:"five_hour"`
+	SevenDay *RateLimitWindow `json:"seven_day"`
+}
+
+// RateLimitWindow describes a single rate-limit window.
+type RateLimitWindow struct {
+	UsedPercentage float64 `json:"used_percentage"`
+	ResetsAt       int64   `json:"resets_at"`
+}
+
+// VimInfo contains vim mode state.
+type VimInfo struct {
+	Mode string `json:"mode"`
+}
+
+// AgentInfo contains the active agent name.
+type AgentInfo struct {
+	Name string `json:"name"`
+}
+
+// PRInfo contains the open PR for the current branch.
+type PRInfo struct {
+	Number      int    `json:"number"`
+	URL         string `json:"url"`
+	ReviewState string `json:"review_state"`
+}
+
+// WorktreeInfo contains --worktree session metadata.
+type WorktreeInfo struct {
+	Name           string `json:"name"`
+	Path           string `json:"path"`
+	Branch         string `json:"branch"`
+	OriginalCwd    string `json:"original_cwd"`
+	OriginalBranch string `json:"original_branch"`
 }
 
 // ContextWindowInfo contains context window data provided by Claude Code.
@@ -106,6 +181,7 @@ type Builder struct {
 	git          GitProvider
 	gh           GitHubProvider
 	taskProvider tasks.Provider
+	pricing      pricing.Provider
 	workDir      string
 	prefix       string // User-provided prefix text
 	prefixColor  string // ANSI color code for prefix
@@ -130,6 +206,7 @@ func NewBuilder(cfg *config.Config, workDir, sessionID string) (*Builder, error)
 		config:  cfg,
 		cache:   cacheManager,
 		workDir: workDir,
+		pricing: pricing.NewLazy(config.CacheDir()),
 	}
 
 	// Try to initialize git client (may fail if not in git repo)
@@ -139,7 +216,7 @@ func NewBuilder(cfg *config.Config, workDir, sessionID string) (*Builder, error)
 		slog.Debug("git client initialization skipped", "workDir", workDir, "err", err)
 	}
 
-	// Initialize task tracker via registry (priority: claude > kt > tk > beads)
+	// Initialize task tracker via registry (priority: claude > kt > tk)
 	b.taskProvider = tasks.SelectProvider(workDir, sessionID)
 
 	return b, nil
@@ -171,16 +248,22 @@ func (b *Builder) Build(input Input) template.StatusData {
 		data.Model = "Claude"
 	}
 
-	// Parse token metrics from transcript
-	b.populateTokenMetrics(&data, input)
+	populateFromInput(&data, input)
 
-	// Populate cost metrics from Claude Code stdin
+	// Parse token metrics from transcript
+	metrics := b.populateTokenMetrics(&data, input)
+
+	// Populate cost metrics from Claude Code stdin, or fall back to models.dev pricing.
 	if input.Cost != nil {
 		data.CostUSD = input.Cost.TotalCostUSD
 		data.DurationMS = input.Cost.TotalDurationMS
 		data.APIDurationMS = input.Cost.TotalAPIDurationMS
 		data.CostLinesAdded = input.Cost.TotalLinesAdded
 		data.CostLinesRemoved = input.Cost.TotalLinesRemoved
+	} else if b.pricing != nil && metrics.TotalTokens > 0 {
+		if price, ok := b.pricing.Lookup(input.Model.ID); ok {
+			data.CostUSD = pricing.Cost(metrics, price)
+		}
 	}
 
 	// Get task stats (cached with TTL) - independent of git
@@ -216,20 +299,71 @@ func (b *Builder) Build(input Input) template.StatusData {
 	return data
 }
 
-// populateTokenMetrics populates token metrics from context_window (preferred) or transcript (fallback).
-func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) {
+// populateFromInput copies optional stdin fields into the status template data.
+func populateFromInput(data *template.StatusData, input Input) {
+	data.ProjectDir = input.Workspace.ProjectDir
+	data.AddedDirs = input.Workspace.AddedDirs
+	data.GitWorktree = input.Workspace.GitWorktree
+	if r := input.Workspace.Repo; r != nil {
+		data.RepoHost = r.Host
+		data.RepoOwner = r.Owner
+		data.RepoName = r.Name
+	}
+	data.SessionName = input.SessionName
+	data.Exceeds200kTokens = input.Exceeds200kTokens
+	if input.OutputStyle != nil {
+		data.OutputStyle = input.OutputStyle.Name
+	}
+	if input.Effort != nil {
+		data.EffortLevel = input.Effort.Level
+	}
+	if input.Thinking != nil {
+		data.ThinkingEnabled = input.Thinking.Enabled
+	}
+	if input.Vim != nil {
+		data.VimMode = input.Vim.Mode
+	}
+	if input.Agent != nil {
+		data.AgentName = input.Agent.Name
+	}
+	if rl := input.RateLimits; rl != nil {
+		if w := rl.FiveHour; w != nil {
+			data.RateLimitFiveHourPct = w.UsedPercentage
+			data.RateLimitFiveHourResetsAt = w.ResetsAt
+		}
+		if w := rl.SevenDay; w != nil {
+			data.RateLimitSevenDayPct = w.UsedPercentage
+			data.RateLimitSevenDayResetsAt = w.ResetsAt
+		}
+	}
+	if pr := input.PR; pr != nil {
+		data.PRNumber = pr.Number
+		data.PRURL = pr.URL
+		data.PRReviewState = pr.ReviewState
+	}
+	if wt := input.Worktree; wt != nil {
+		data.WorktreeName = wt.Name
+		data.WorktreePath = wt.Path
+		data.WorktreeBranch = wt.Branch
+		data.WorktreeOriginalCwd = wt.OriginalCwd
+		data.WorktreeOriginalBranch = wt.OriginalBranch
+	}
+}
+
+// populateTokenMetrics populates token metrics from context_window (preferred)
+// or transcript (fallback) and returns the metrics used for cost calculations.
+func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) tokens.Metrics {
 	// Prefer context_window data from Claude Code stdin when available
 	if input.ContextWindow != nil && input.ContextWindow.UsedPercentage != nil {
-		b.populateFromContextWindow(data, input)
-		return
+		return b.populateFromContextWindow(data, input)
 	}
 
 	// Fall back to transcript parsing
-	b.populateFromTranscript(data, input)
+	return b.populateFromTranscript(data, input)
 }
 
 // populateFromContextWindow uses pre-calculated context data from Claude Code.
-func (b *Builder) populateFromContextWindow(data *template.StatusData, input Input) {
+func (b *Builder) populateFromContextWindow(data *template.StatusData, input Input) tokens.Metrics {
 	cw := input.ContextWindow
 
 	data.ContextPct = *cw.UsedPercentage
@@ -238,6 +372,7 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 	// Scale to usable context (auto-compact threshold)
 	data.ContextPctUse = min(*cw.UsedPercentage/tokens.AutoCompactThreshold, 100)
 
+	var m tokens.Metrics
 	// Populate token metrics from current_usage if available
 	if cw.CurrentUsage != nil {
 		u := cw.CurrentUsage
@@ -245,22 +380,31 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 		data.TokensOutput = u.OutputTokens
 		data.TokensCached = u.CacheReadInputTokens + u.CacheCreationInputTokens
 		data.ContextLength = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+
+		m.InputTokens = u.InputTokens
+		m.OutputTokens = u.OutputTokens
+		m.CacheReadTokens = u.CacheReadInputTokens
+		m.CacheCreationTokens = u.CacheCreationInputTokens
+		m.CachedTokens = u.CacheReadInputTokens + u.CacheCreationInputTokens
+		m.ContextLength = data.ContextLength
 	}
 
 	// Use cumulative totals for total tokens (session-cumulative, not per-call)
 	data.TokensTotal = cw.TotalInputTokens + cw.TotalOutputTokens
+	m.TotalTokens = m.InputTokens + m.OutputTokens + m.CachedTokens
+	return m
 }
 
 // populateFromTranscript parses the transcript JSONL file for token metrics.
-func (b *Builder) populateFromTranscript(data *template.StatusData, input Input) {
+func (b *Builder) populateFromTranscript(data *template.StatusData, input Input) tokens.Metrics {
 	if input.TranscriptPath == "" {
-		return
+		return tokens.Metrics{}
 	}
 
 	metrics, err := tokens.ParseTranscript(input.TranscriptPath)
 	if err != nil {
 		slog.Debug("failed to parse transcript", "path", input.TranscriptPath, "err", err)
-		return
+		return tokens.Metrics{}
 	}
 
 	// Get context config based on model
@@ -274,6 +418,7 @@ func (b *Builder) populateFromTranscript(data *template.StatusData, input Input)
 	data.ContextLength = metrics.ContextLength
 	data.ContextPct = metrics.ContextPercentage(ctxCfg)
 	data.ContextPctUse = metrics.ContextPercentageUsable(ctxCfg)
+	return metrics
 }
 
 // populateDiffStats populates git diff statistics into StatusData.
@@ -330,6 +475,13 @@ func (b *Builder) fetchGitHubStatus(data *template.StatusData, branch string) {
 // SetGitHubClient sets the GitHub client (for lazy initialization or testing).
 func (b *Builder) SetGitHubClient(gh GitHubProvider) {
 	b.gh = gh
+}
+
+// SetPricingProvider overrides the pricing provider used for cost fallback.
+// Primarily intended for tests; production code uses the lazy provider set in
+// NewBuilder.
+func (b *Builder) SetPricingProvider(p pricing.Provider) {
+	b.pricing = p
 }
 
 // SetPrefix sets a prefix to be displayed at the start of the status line.

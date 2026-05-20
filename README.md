@@ -19,7 +19,7 @@ work | [Sonnet 4] | 📁 my-project | 🌿 main ±3 +42,-10 ✨2📝1 | ✅ | �
 - **Smart Caching** - Git info cached based on file modification times; no redundant git calls
 - **GitHub CI Status** - Shows build status (✅ ❌ 🔄) for your current branch
 - **Git Diff Stats** - Line additions/deletions and file change counts
-- **Task Tracking** - Integrates with [beads](https://github.com/steveyegge/beads) for task visibility
+- **Task Tracking** - Shows ready/blocked counts from supported task trackers
 - **Multi-Profile** - Use `--prefix` to identify different Claude sessions
 - **Customizable** - Full Go template support with ANSI colors
 - **Zero Config** - Works out of the box with sensible defaults
@@ -105,9 +105,10 @@ CLAUDE_CONFIG_DIR=/custom/path ./claude-status -install
 | **Git Diff** | Line additions/deletions | `+42,-10` |
 | **Git Files** | New/modified/deleted/unstaged files | `✨2📝1🗑1⚡3` |
 | **GitHub CI** | Latest workflow run status | `✅` `❌` `🔄` |
+| **Pull Request** | Open PR for the branch (clickable in supported terminals) | `✅ #42` |
 | **Context %** | Usable context usage before auto-compact (color-coded) | `📊 56.5%` |
 | **Version** | Claude Code version | `v1.0.0` |
-| **Tasks** | Task tracking stats (if [beads](https://github.com/anthropics/beads) is configured) | `📋 Tasks: 2 ready, 1 blocked` |
+| **Tasks** | Task tracking stats (if a supported task tracker is configured) | `📋 Tasks: 2 ready, 1 blocked` |
 
 ### Token Metrics (Available in Templates)
 
@@ -132,9 +133,21 @@ All values are raw numbers. Use `fmtTokens` and `fmtPct` template functions to f
 | 🔄 | Build in progress |
 | ⚠️ | Status unknown |
 
-### Task Tracking (beads)
+### PR Review State Icons
 
-If you use [beads](https://github.com/anthropics/beads) for task tracking, claude-status automatically detects the `.beads/` directory and shows task stats on a second line:
+When Claude Code reports an open pull request for the current branch, claude-status renders a clickable `<emoji> #<number>` link (OSC 8, works in iTerm2, Kitty, WezTerm, and most modern terminals).
+
+| Icon | Review state |
+|------|--------------|
+| ✅ | Approved |
+| ⏳ | Pending review |
+| ❌ | Changes requested |
+| 📝 | Draft |
+| 🔀 | Unknown / no state |
+
+### Task Tracking
+
+If you use a supported task tracker (`kt`, `tk`, or Claude Code's built-in tasks), claude-status automatically detects it and shows task stats on a second line:
 
 ```
 📋 Tasks: 2 ready, 1 blocked. Next Up: Implement feature X
@@ -164,24 +177,25 @@ Create `~/.config/claude-status/config.json`:
 | `template` | string | (see below) | Go template for status line |
 | `github_workflow` | string | `"build_and_test"` | GitHub Actions workflow name to monitor |
 | `github_ttl` | int | `60` | Seconds to cache GitHub status |
-| `beads_ttl` | int | `5` | Seconds to cache beads task stats |
+| `tasks_ttl` | int | `5` | Seconds to cache task stats |
 | `logging_enabled` | bool | `false` | Enable status line logging |
 | `log_path` | string | XDG data dir | Custom log file path |
 
 ### Default Template
 
-The default template shows a complete status line with prefix support, git diff stats, and a second line for task tracking (if beads is configured):
+The default template shows a complete status line with prefix support, git diff stats, clickable PR link, and a second line for task tracking (if a task tracker is configured):
 
 ```
-{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .BeadsReady}}
-{{yellow}}📋 Tasks: {{.BeadsReady}} ready{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}} blocked{{reset}}{{end}}{{if .BeadsNextTask}}. Next Up: {{.BeadsNextTask}}{{end}}{{end}}
+{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .PRNumber}} | {{magenta}}{{link .PRURL (printf "%s #%d" (prEmoji .PRReviewState) .PRNumber)}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .TasksReady}}
+{{yellow}}📋 {{.TaskProvider}}: {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{if .TasksNextTask}}. Next Up: {{.TasksNextTask}}{{end}}{{end}}
 ```
 
 Features:
 - **Prefix** - Optional profile identifier (via `--prefix` flag)
 - **Context percentage** - Color-coded (green/yellow/red) based on usage
 - **Git diff stats** - Shows additions, deletions, and file changes
-- **Task tracking** - Second line with beads task stats (if available)
+- **Pull request** - Clickable PR number with review-state emoji
+- **Task tracking** - Second line with task stats (if a tracker is available)
 
 ## Template Reference
 
@@ -212,13 +226,66 @@ All values are raw numbers. Use template functions (`fmtTokens`, `fmtPct`, `fmtS
 | `.ContextLength` | int64 | Context length |
 | `.ContextPct` | float64 | Context percentage of max tokens (0-100) |
 | `.ContextPctUse` | float64 | Usable context percentage (0-100) - **used in default template** |
-| `.BeadsTotal` | int | Total issues count |
-| `.BeadsOpen` | int | Open issues count |
-| `.BeadsReady` | int | Ready issues count |
-| `.BeadsInProgress` | int | In-progress count |
-| `.BeadsBlocked` | int | Blocked count |
-| `.BeadsNextTask` | string | Title of next ready task (empty if none) |
-| `.HasBeads` | bool | Whether beads system is available |
+| `.ContextWindowSize` | int64 | Max context window in tokens (200k or 1M) |
+| `.CostUSD` | float64 | Session cost in USD (from Claude Code stdin) |
+| `.DurationMS` | int64 | Total wall-clock session duration (ms) |
+| `.APIDurationMS` | int64 | Total API response time (ms) |
+| `.CostLinesAdded` | int | Lines added across session |
+| `.CostLinesRemoved` | int | Lines removed across session |
+| `.TaskProvider` | string | Provider name (`"claude"`, `"kt"`, or `"tk"`) |
+| `.TaskListID` | string | Claude Code task list ID (when `CLAUDE_CODE_TASK_LIST_ID` is set) |
+| `.TasksTotal` | int | Total issues count |
+| `.TasksOpen` | int | Open issues count |
+| `.TasksReady` | int | Ready issues count |
+| `.TasksInProgress` | int | In-progress count |
+| `.TasksBlocked` | int | Blocked count |
+| `.TasksNextTask` | string | Title of next ready task (empty if none) |
+| `.HasTasks` | bool | Whether a task tracker is available |
+
+#### Workspace & session metadata (from Claude Code stdin)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `.ProjectDir` | string | Directory where Claude Code was launched (may differ from `.Dir`) |
+| `.AddedDirs` | []string | Extra dirs added via `/add-dir` |
+| `.GitWorktree` | string | Git worktree name when inside a linked worktree |
+| `.RepoHost` | string | Origin remote host (e.g., `"github.com"`) |
+| `.RepoOwner` | string | Origin remote owner |
+| `.RepoName` | string | Origin remote repo name |
+| `.SessionName` | string | Custom session name from `--name` or `/rename` |
+| `.OutputStyle` | string | Active output style name |
+| `.Exceeds200kTokens` | bool | Whether the last response exceeds 200k tokens |
+| `.EffortLevel` | string | Reasoning effort (`low`/`medium`/`high`/`xhigh`/`max`) |
+| `.ThinkingEnabled` | bool | Whether extended thinking is enabled |
+| `.VimMode` | string | Vim mode (`NORMAL`/`INSERT`/`VISUAL`/`VISUAL LINE`) |
+| `.AgentName` | string | Agent name when running with `--agent` |
+
+#### Rate limits (Pro/Max accounts)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `.RateLimitFiveHourPct` | float64 | 5-hour window used percentage |
+| `.RateLimitFiveHourResetsAt` | int64 | 5-hour window reset (unix epoch) |
+| `.RateLimitSevenDayPct` | float64 | 7-day window used percentage |
+| `.RateLimitSevenDayResetsAt` | int64 | 7-day window reset (unix epoch) |
+
+#### Pull request (when an open PR exists for the branch)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `.PRNumber` | int | PR number (0 when absent) |
+| `.PRURL` | string | PR URL |
+| `.PRReviewState` | string | `approved`/`pending`/`changes_requested`/`draft` |
+
+#### Worktree session (`--worktree`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `.WorktreeName` | string | Active worktree name |
+| `.WorktreePath` | string | Worktree directory path |
+| `.WorktreeBranch` | string | Worktree branch |
+| `.WorktreeOriginalCwd` | string | Directory before entering the worktree |
+| `.WorktreeOriginalBranch` | string | Branch checked out before the worktree |
 
 ### Template Functions
 
@@ -227,6 +294,10 @@ All values are raw numbers. Use template functions (`fmtTokens`, `fmtPct`, `fmtS
 | `{{fmtTokens .TokensInput}}` | Format token count (e.g., 10500 → "10.5k") | `{{fmtTokens .TokensTotal}}` |
 | `{{fmtPct .ContextPctUse}}` | Format percentage (e.g., 45.2 → "45.2%") | `{{fmtPct .ContextPct}}` |
 | `{{fmtSigned .GitAdditions}}` | Format with +/- prefix (e.g., 42 → "+42") | `{{fmtSigned .GitAdditions}}` |
+| `{{fmtCost .CostUSD}}` | Format USD amount (e.g., 0.01234 → "$0.01") | `{{fmtCost .CostUSD}}` |
+| `{{fmtDuration .DurationMS}}` | Format milliseconds (e.g., 125000 → "2m 5s") | `{{fmtDuration .DurationMS}}` |
+| `{{link .PRURL "text"}}` | Wrap text in an OSC 8 clickable hyperlink | `{{link .PRURL .PRNumber}}` |
+| `{{prEmoji .PRReviewState}}` | Map PR review state to an emoji (`✅`/`⏳`/`❌`/`📝`/`🔀`) | `{{prEmoji .PRReviewState}}` |
 
 ### Color Functions
 
@@ -293,9 +364,17 @@ feature-branch ±5 ✅
 [Sonnet 4] | 📁 my-project | 🌿 main +42,-10
 ```
 
-**Task-focused (for beads users):**
+**With clickable PR link:**
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .BeadsReady}} | {{yellow}}📋 {{.BeadsReady}} ready{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}} blocked{{reset}}{{end}}{{end}}
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .PRNumber}} | {{magenta}}{{link .PRURL (printf "%s #%d" (prEmoji .PRReviewState) .PRNumber)}}{{reset}}{{end}}
+```
+```
+[Sonnet 4] | 📁 my-project | ✅ #42
+```
+
+**Task-focused:**
+```
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .TasksReady}} | {{yellow}}📋 {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{end}}
 ```
 ```
 [Sonnet 4] | 📁 my-project | 📋 2 ready, 1 blocked
@@ -374,7 +453,6 @@ go test -v ./...
 ```
 ├── cmd/claude-status/    # Main entry point
 ├── internal/
-│   ├── beads/            # Beads task tracking integration
 │   ├── cache/            # File-based caching
 │   ├── config/           # Configuration loading
 │   ├── git/              # Git operations
@@ -421,7 +499,7 @@ echo '{}' | claude-status 2>&1
 | Token metrics | ✅ Full support | ✅ Full support |
 | Context tracking | ✅ Model-aware (1M/200k) | ✅ Model-aware |
 | Git diff stats | ✅ Additions/deletions/files | ❌ |
-| Task tracking | ✅ beads integration | ❌ |
+| Task tracking | ✅ kt/tk/Claude tasks | ❌ |
 | Multi-profile | ✅ `--prefix` flag | ❌ |
 | Powerline fonts | Via template | Built-in support |
 

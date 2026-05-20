@@ -10,17 +10,36 @@ import (
 
 // Metrics holds token usage statistics parsed from a transcript.
 type Metrics struct {
-	InputTokens   int64 // Total input tokens used
-	OutputTokens  int64 // Total output tokens generated
-	CachedTokens  int64 // Total cached tokens (read + creation)
-	TotalTokens   int64 // Sum of all tokens
-	ContextLength int64 // Current context window size (last message's input + cache)
+	InputTokens         int64 // Total input tokens used
+	OutputTokens        int64 // Total output tokens generated
+	CacheReadTokens     int64 // Cache-read tokens (priced lower than input)
+	CacheCreationTokens int64 // Cache-write tokens (priced higher than input)
+	CachedTokens        int64 // Sum of cache read + creation (back-compat)
+	TotalTokens         int64 // Sum of all tokens
+	ContextLength       int64 // Current context window size (last message's input + cache)
 }
 
 // AutoCompactThreshold is the fraction of the context window at which Claude Code
 // triggers auto-compaction. Used to derive UsableTokens and to scale used_percentage
 // from the stdin context_window data.
 const AutoCompactThreshold = 0.8
+
+// suffix1M is the Claude Code marker on model IDs that signals 1M-token context mode.
+const suffix1M = "[1m]"
+
+// Has1MContext reports whether a model ID carries the 1M-context suffix.
+func Has1MContext(modelID string) bool {
+	return strings.Contains(strings.ToLower(modelID), suffix1M)
+}
+
+// NormalizeModelID strips Claude Code's context-mode suffix so the bare model ID
+// can be used as a key against APIs like models.dev that don't know about it.
+func NormalizeModelID(modelID string) string {
+	if i := strings.Index(strings.ToLower(modelID), suffix1M); i >= 0 {
+		return modelID[:i]
+	}
+	return modelID
+}
 
 // ContextConfig holds model-specific context limits.
 type ContextConfig struct {
@@ -31,7 +50,7 @@ type ContextConfig struct {
 // GetContextConfig returns context limits based on model ID.
 // Models with "[1m]" suffix (Opus 4.6, Sonnet 4.5, Sonnet 4) have 1M context, all others have 200k.
 func GetContextConfig(modelID string) ContextConfig {
-	if strings.Contains(strings.ToLower(modelID), "[1m]") {
+	if Has1MContext(modelID) {
 		return ContextConfig{
 			MaxTokens:    1_000_000,
 			UsableTokens: int64(1_000_000 * AutoCompactThreshold),
@@ -104,13 +123,12 @@ func ParseTranscript(path string) (Metrics, error) {
 
 		u := entry.Message.Usage
 
-		// Accumulate tokens
 		m.InputTokens += u.InputTokens
 		m.OutputTokens += u.OutputTokens
-		m.CachedTokens += u.CacheReadInputTokens + u.CacheCreationInputTokens
+		m.CacheReadTokens += u.CacheReadInputTokens
+		m.CacheCreationTokens += u.CacheCreationInputTokens
 
-		// Context length is the input + cached tokens for the most recent message
-		// This represents the current context window size
+		// Context length is the most recent message's input + cache reads + cache creations.
 		lastContextLength = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
 	}
 
@@ -118,6 +136,7 @@ func ParseTranscript(path string) (Metrics, error) {
 		return Metrics{}, err
 	}
 
+	m.CachedTokens = m.CacheReadTokens + m.CacheCreationTokens
 	m.TotalTokens = m.InputTokens + m.OutputTokens + m.CachedTokens
 	m.ContextLength = lastContextLength
 

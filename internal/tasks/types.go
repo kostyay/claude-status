@@ -18,7 +18,7 @@ type Stats struct {
 
 // Provider is the interface for task tracking systems.
 type Provider interface {
-	// Name returns the provider name (e.g., "kt", "tk", "beads").
+	// Name returns the provider name (e.g., "kt", "tk", "claude").
 	Name() string
 
 	// Available returns true if this provider is active for the working directory.
