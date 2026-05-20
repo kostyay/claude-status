@@ -11,6 +11,7 @@ import (
 	"github.com/kostyay/claude-status/internal/config"
 	"github.com/kostyay/claude-status/internal/git"
 	"github.com/kostyay/claude-status/internal/github"
+	"github.com/kostyay/claude-status/internal/pricing"
 	"github.com/kostyay/claude-status/internal/tasks"
 	"github.com/kostyay/claude-status/internal/template"
 	"github.com/kostyay/claude-status/internal/tokens"
@@ -106,6 +107,7 @@ type Builder struct {
 	git          GitProvider
 	gh           GitHubProvider
 	taskProvider tasks.Provider
+	pricing      pricing.Provider
 	workDir      string
 	prefix       string // User-provided prefix text
 	prefixColor  string // ANSI color code for prefix
@@ -130,6 +132,7 @@ func NewBuilder(cfg *config.Config, workDir, sessionID string) (*Builder, error)
 		config:  cfg,
 		cache:   cacheManager,
 		workDir: workDir,
+		pricing: &pricing.Lazy{CacheDir: config.CacheDir()},
 	}
 
 	// Try to initialize git client (may fail if not in git repo)
@@ -172,15 +175,19 @@ func (b *Builder) Build(input Input) template.StatusData {
 	}
 
 	// Parse token metrics from transcript
-	b.populateTokenMetrics(&data, input)
+	metrics := b.populateTokenMetrics(&data, input)
 
-	// Populate cost metrics from Claude Code stdin
+	// Populate cost metrics from Claude Code stdin, or fall back to models.dev pricing.
 	if input.Cost != nil {
 		data.CostUSD = input.Cost.TotalCostUSD
 		data.DurationMS = input.Cost.TotalDurationMS
 		data.APIDurationMS = input.Cost.TotalAPIDurationMS
 		data.CostLinesAdded = input.Cost.TotalLinesAdded
 		data.CostLinesRemoved = input.Cost.TotalLinesRemoved
+	} else if b.pricing != nil && metrics.TotalTokens > 0 {
+		if price, ok := b.pricing.Lookup(input.Model.ID); ok {
+			data.CostUSD = pricing.Cost(metrics, price)
+		}
 	}
 
 	// Get task stats (cached with TTL) - independent of git
@@ -216,20 +223,20 @@ func (b *Builder) Build(input Input) template.StatusData {
 	return data
 }
 
-// populateTokenMetrics populates token metrics from context_window (preferred) or transcript (fallback).
-func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) {
+// populateTokenMetrics populates token metrics from context_window (preferred)
+// or transcript (fallback) and returns the metrics used for cost calculations.
+func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) tokens.Metrics {
 	// Prefer context_window data from Claude Code stdin when available
 	if input.ContextWindow != nil && input.ContextWindow.UsedPercentage != nil {
-		b.populateFromContextWindow(data, input)
-		return
+		return b.populateFromContextWindow(data, input)
 	}
 
 	// Fall back to transcript parsing
-	b.populateFromTranscript(data, input)
+	return b.populateFromTranscript(data, input)
 }
 
 // populateFromContextWindow uses pre-calculated context data from Claude Code.
-func (b *Builder) populateFromContextWindow(data *template.StatusData, input Input) {
+func (b *Builder) populateFromContextWindow(data *template.StatusData, input Input) tokens.Metrics {
 	cw := input.ContextWindow
 
 	data.ContextPct = *cw.UsedPercentage
@@ -238,6 +245,7 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 	// Scale to usable context (auto-compact threshold)
 	data.ContextPctUse = min(*cw.UsedPercentage/tokens.AutoCompactThreshold, 100)
 
+	var m tokens.Metrics
 	// Populate token metrics from current_usage if available
 	if cw.CurrentUsage != nil {
 		u := cw.CurrentUsage
@@ -245,22 +253,31 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 		data.TokensOutput = u.OutputTokens
 		data.TokensCached = u.CacheReadInputTokens + u.CacheCreationInputTokens
 		data.ContextLength = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+
+		m.InputTokens = u.InputTokens
+		m.OutputTokens = u.OutputTokens
+		m.CacheReadTokens = u.CacheReadInputTokens
+		m.CacheCreationTokens = u.CacheCreationInputTokens
+		m.CachedTokens = u.CacheReadInputTokens + u.CacheCreationInputTokens
+		m.ContextLength = data.ContextLength
 	}
 
 	// Use cumulative totals for total tokens (session-cumulative, not per-call)
 	data.TokensTotal = cw.TotalInputTokens + cw.TotalOutputTokens
+	m.TotalTokens = m.InputTokens + m.OutputTokens + m.CachedTokens
+	return m
 }
 
 // populateFromTranscript parses the transcript JSONL file for token metrics.
-func (b *Builder) populateFromTranscript(data *template.StatusData, input Input) {
+func (b *Builder) populateFromTranscript(data *template.StatusData, input Input) tokens.Metrics {
 	if input.TranscriptPath == "" {
-		return
+		return tokens.Metrics{}
 	}
 
 	metrics, err := tokens.ParseTranscript(input.TranscriptPath)
 	if err != nil {
 		slog.Debug("failed to parse transcript", "path", input.TranscriptPath, "err", err)
-		return
+		return tokens.Metrics{}
 	}
 
 	// Get context config based on model
@@ -274,6 +291,7 @@ func (b *Builder) populateFromTranscript(data *template.StatusData, input Input)
 	data.ContextLength = metrics.ContextLength
 	data.ContextPct = metrics.ContextPercentage(ctxCfg)
 	data.ContextPctUse = metrics.ContextPercentageUsable(ctxCfg)
+	return metrics
 }
 
 // populateDiffStats populates git diff statistics into StatusData.
@@ -330,6 +348,13 @@ func (b *Builder) fetchGitHubStatus(data *template.StatusData, branch string) {
 // SetGitHubClient sets the GitHub client (for lazy initialization or testing).
 func (b *Builder) SetGitHubClient(gh GitHubProvider) {
 	b.gh = gh
+}
+
+// SetPricingProvider overrides the pricing provider used for cost fallback.
+// Primarily intended for tests; production code uses the lazy provider set in
+// NewBuilder.
+func (b *Builder) SetPricingProvider(p pricing.Provider) {
+	b.pricing = p
 }
 
 // SetPrefix sets a prefix to be displayed at the start of the status line.

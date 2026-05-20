@@ -10,11 +10,13 @@ import (
 
 // Metrics holds token usage statistics parsed from a transcript.
 type Metrics struct {
-	InputTokens   int64 // Total input tokens used
-	OutputTokens  int64 // Total output tokens generated
-	CachedTokens  int64 // Total cached tokens (read + creation)
-	TotalTokens   int64 // Sum of all tokens
-	ContextLength int64 // Current context window size (last message's input + cache)
+	InputTokens         int64 // Total input tokens used
+	OutputTokens        int64 // Total output tokens generated
+	CacheReadTokens     int64 // Cache-read tokens (priced lower than input)
+	CacheCreationTokens int64 // Cache-write tokens (priced higher than input)
+	CachedTokens        int64 // Sum of cache read + creation (back-compat)
+	TotalTokens         int64 // Sum of all tokens
+	ContextLength       int64 // Current context window size (last message's input + cache)
 }
 
 // AutoCompactThreshold is the fraction of the context window at which Claude Code
@@ -107,6 +109,8 @@ func ParseTranscript(path string) (Metrics, error) {
 		// Accumulate tokens
 		m.InputTokens += u.InputTokens
 		m.OutputTokens += u.OutputTokens
+		m.CacheReadTokens += u.CacheReadInputTokens
+		m.CacheCreationTokens += u.CacheCreationInputTokens
 		m.CachedTokens += u.CacheReadInputTokens + u.CacheCreationInputTokens
 
 		// Context length is the input + cached tokens for the most recent message
