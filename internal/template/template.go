@@ -72,8 +72,8 @@ type StatusData struct {
 	CostLinesAdded   int     // Total lines added in session
 	CostLinesRemoved int     // Total lines removed in session
 
-	// Task stats (raw values) - populated by claude, kt, tk, or beads
-	TaskProvider    string // Provider name: "claude", "kt", "tk", or "beads"
+	// Task stats (raw values) - populated by claude, kt, or tk
+	TaskProvider    string // Provider name: "claude", "kt", or "tk"
 	TaskListID      string // Task list ID (from CLAUDE_CODE_TASK_LIST_ID env var, empty if using session)
 	TasksTotal      int    // Total issues
 	TasksOpen       int    // Open issues
@@ -82,6 +82,41 @@ type StatusData struct {
 	TasksBlocked    int    // Blocked issues
 	TasksNextTask   string // Title of next ready task, or empty if none
 	HasTasks        bool   // Whether task system is available
+
+	// Workspace extras (from stdin)
+	ProjectDir  string   // Directory where Claude Code was launched
+	AddedDirs   []string // Extra dirs from /add-dir
+	GitWorktree string   // Git worktree name when inside a linked worktree
+	RepoHost    string   // Origin remote host (e.g., "github.com")
+	RepoOwner   string   // Origin remote owner
+	RepoName    string   // Origin remote repo name
+
+	// Session metadata (from stdin)
+	SessionName       string // Custom session name from --name or /rename
+	OutputStyle       string // Active output style name
+	Exceeds200kTokens bool   // Whether last response exceeds 200k tokens
+	EffortLevel       string // low|medium|high|xhigh|max
+	ThinkingEnabled   bool   // Extended thinking on/off
+	VimMode           string // NORMAL|INSERT|VISUAL|VISUAL LINE
+	AgentName         string // --agent name when running an agent
+
+	// Rate limits (Pro/Max — fields may be 0 when absent)
+	RateLimitFiveHourPct      float64 // 5h window used %
+	RateLimitFiveHourResetsAt int64   // 5h window unix epoch reset
+	RateLimitSevenDayPct      float64 // 7d window used %
+	RateLimitSevenDayResetsAt int64   // 7d window unix epoch reset
+
+	// Pull request (from stdin — present only when an open PR is found)
+	PRNumber      int    // Open PR number (0 when absent)
+	PRURL         string // PR URL
+	PRReviewState string // approved|pending|changes_requested|draft
+
+	// Worktree session (--worktree)
+	WorktreeName           string
+	WorktreePath           string
+	WorktreeBranch         string
+	WorktreeOriginalCwd    string
+	WorktreeOriginalBranch string
 }
 
 // FormatTokens formats a token count in a human-readable way.
@@ -144,6 +179,31 @@ var funcs = template.FuncMap{
 	// fmtCost formats a USD amount: 0.01234 -> "$0.01", 1.50 -> "$1.50"
 	"fmtCost": func(usd float64) string {
 		return fmt.Sprintf("$%.2f", usd)
+	},
+
+	// link wraps text in an OSC 8 hyperlink so terminals that support it render
+	// the text as clickable. Terminals that don't support OSC 8 ignore the
+	// sequence and show the plain text.
+	"link": func(url, text string) string {
+		if url == "" {
+			return text
+		}
+		return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
+	},
+
+	// prEmoji maps a PR review state to an emoji indicator.
+	"prEmoji": func(state string) string {
+		switch state {
+		case "approved":
+			return "✅"
+		case "changes_requested":
+			return "❌"
+		case "draft":
+			return "📝"
+		case "pending":
+			return "⏳"
+		}
+		return "🔀"
 	},
 
 	// fmtDuration formats milliseconds to human-readable: 125000 -> "2m 5s", 7500000 -> "2h 5m"

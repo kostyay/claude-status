@@ -19,7 +19,7 @@ work | [Sonnet 4] | 📁 my-project | 🌿 main ±3 +42,-10 ✨2📝1 | ✅ | �
 - **Smart Caching** - Git info cached based on file modification times; no redundant git calls
 - **GitHub CI Status** - Shows build status (✅ ❌ 🔄) for your current branch
 - **Git Diff Stats** - Line additions/deletions and file change counts
-- **Task Tracking** - Integrates with [beads](https://github.com/steveyegge/beads) for task visibility
+- **Task Tracking** - Shows ready/blocked counts from supported task trackers
 - **Multi-Profile** - Use `--prefix` to identify different Claude sessions
 - **Customizable** - Full Go template support with ANSI colors
 - **Zero Config** - Works out of the box with sensible defaults
@@ -107,7 +107,7 @@ CLAUDE_CONFIG_DIR=/custom/path ./claude-status -install
 | **GitHub CI** | Latest workflow run status | `✅` `❌` `🔄` |
 | **Context %** | Usable context usage before auto-compact (color-coded) | `📊 56.5%` |
 | **Version** | Claude Code version | `v1.0.0` |
-| **Tasks** | Task tracking stats (if [beads](https://github.com/anthropics/beads) is configured) | `📋 Tasks: 2 ready, 1 blocked` |
+| **Tasks** | Task tracking stats (if a supported task tracker is configured) | `📋 Tasks: 2 ready, 1 blocked` |
 
 ### Token Metrics (Available in Templates)
 
@@ -132,9 +132,9 @@ All values are raw numbers. Use `fmtTokens` and `fmtPct` template functions to f
 | 🔄 | Build in progress |
 | ⚠️ | Status unknown |
 
-### Task Tracking (beads)
+### Task Tracking
 
-If you use [beads](https://github.com/anthropics/beads) for task tracking, claude-status automatically detects the `.beads/` directory and shows task stats on a second line:
+If you use a supported task tracker (`kt`, `tk`, or Claude Code's built-in tasks), claude-status automatically detects it and shows task stats on a second line:
 
 ```
 📋 Tasks: 2 ready, 1 blocked. Next Up: Implement feature X
@@ -164,24 +164,24 @@ Create `~/.config/claude-status/config.json`:
 | `template` | string | (see below) | Go template for status line |
 | `github_workflow` | string | `"build_and_test"` | GitHub Actions workflow name to monitor |
 | `github_ttl` | int | `60` | Seconds to cache GitHub status |
-| `beads_ttl` | int | `5` | Seconds to cache beads task stats |
+| `tasks_ttl` | int | `5` | Seconds to cache task stats |
 | `logging_enabled` | bool | `false` | Enable status line logging |
 | `log_path` | string | XDG data dir | Custom log file path |
 
 ### Default Template
 
-The default template shows a complete status line with prefix support, git diff stats, and a second line for task tracking (if beads is configured):
+The default template shows a complete status line with prefix support, git diff stats, and a second line for task tracking (if a task tracker is configured):
 
 ```
-{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .BeadsReady}}
-{{yellow}}📋 Tasks: {{.BeadsReady}} ready{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}} blocked{{reset}}{{end}}{{if .BeadsNextTask}}. Next Up: {{.BeadsNextTask}}{{end}}{{end}}
+{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .TasksReady}}
+{{yellow}}📋 {{.TaskProvider}}: {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{if .TasksNextTask}}. Next Up: {{.TasksNextTask}}{{end}}{{end}}
 ```
 
 Features:
 - **Prefix** - Optional profile identifier (via `--prefix` flag)
 - **Context percentage** - Color-coded (green/yellow/red) based on usage
 - **Git diff stats** - Shows additions, deletions, and file changes
-- **Task tracking** - Second line with beads task stats (if available)
+- **Task tracking** - Second line with task stats (if a tracker is available)
 
 ## Template Reference
 
@@ -212,13 +212,14 @@ All values are raw numbers. Use template functions (`fmtTokens`, `fmtPct`, `fmtS
 | `.ContextLength` | int64 | Context length |
 | `.ContextPct` | float64 | Context percentage of max tokens (0-100) |
 | `.ContextPctUse` | float64 | Usable context percentage (0-100) - **used in default template** |
-| `.BeadsTotal` | int | Total issues count |
-| `.BeadsOpen` | int | Open issues count |
-| `.BeadsReady` | int | Ready issues count |
-| `.BeadsInProgress` | int | In-progress count |
-| `.BeadsBlocked` | int | Blocked count |
-| `.BeadsNextTask` | string | Title of next ready task (empty if none) |
-| `.HasBeads` | bool | Whether beads system is available |
+| `.TaskProvider` | string | Provider name (`"claude"`, `"kt"`, or `"tk"`) |
+| `.TasksTotal` | int | Total issues count |
+| `.TasksOpen` | int | Open issues count |
+| `.TasksReady` | int | Ready issues count |
+| `.TasksInProgress` | int | In-progress count |
+| `.TasksBlocked` | int | Blocked count |
+| `.TasksNextTask` | string | Title of next ready task (empty if none) |
+| `.HasTasks` | bool | Whether a task tracker is available |
 
 ### Template Functions
 
@@ -293,9 +294,9 @@ feature-branch ±5 ✅
 [Sonnet 4] | 📁 my-project | 🌿 main +42,-10
 ```
 
-**Task-focused (for beads users):**
+**Task-focused:**
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .BeadsReady}} | {{yellow}}📋 {{.BeadsReady}} ready{{reset}}{{if .BeadsBlocked}}, {{red}}{{.BeadsBlocked}} blocked{{reset}}{{end}}{{end}}
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .TasksReady}} | {{yellow}}📋 {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{end}}
 ```
 ```
 [Sonnet 4] | 📁 my-project | 📋 2 ready, 1 blocked
@@ -374,7 +375,6 @@ go test -v ./...
 ```
 ├── cmd/claude-status/    # Main entry point
 ├── internal/
-│   ├── beads/            # Beads task tracking integration
 │   ├── cache/            # File-based caching
 │   ├── config/           # Configuration loading
 │   ├── git/              # Git operations
@@ -421,7 +421,7 @@ echo '{}' | claude-status 2>&1
 | Token metrics | ✅ Full support | ✅ Full support |
 | Context tracking | ✅ Model-aware (1M/200k) | ✅ Model-aware |
 | Git diff stats | ✅ Additions/deletions/files | ❌ |
-| Task tracking | ✅ beads integration | ❌ |
+| Task tracking | ✅ kt/tk/Claude tasks | ❌ |
 | Multi-profile | ✅ `--prefix` flag | ❌ |
 | Powerline fonts | Via template | Built-in support |
 

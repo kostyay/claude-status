@@ -1,5 +1,10 @@
 # Changelog
 
+## remove-beads
+
+Removed the beads task provider and all `bd` CLI integration. The supported
+task trackers are now Claude Code tasks, kt, and tk.
+
 ## feat/debug-logging-remove-task-cache
 
 Debug logging for workspace diagnosis and task caching removal (#16).

@@ -17,21 +17,31 @@ import (
 	"github.com/kostyay/claude-status/internal/tokens"
 
 	// Task providers (priority controlled by RegisterWithPriority, not import order)
-	_ "github.com/kostyay/claude-status/internal/beads"
 	_ "github.com/kostyay/claude-status/internal/claudetasks"
 	_ "github.com/kostyay/claude-status/internal/kt"
 	_ "github.com/kostyay/claude-status/internal/tk"
 )
 
 // Input represents the JSON input from stdin.
+// See https://code.claude.com/docs/en/statusline for the full schema.
 type Input struct {
-	Model          ModelInfo          `json:"model"`
-	Workspace      WorkspaceInfo      `json:"workspace"`
-	Version        string             `json:"version"`
-	SessionID      string             `json:"session_id"`
-	TranscriptPath string             `json:"transcript_path"`
-	ContextWindow  *ContextWindowInfo `json:"context_window"`
-	Cost           *CostInfo          `json:"cost"`
+	Model             ModelInfo          `json:"model"`
+	Workspace         WorkspaceInfo      `json:"workspace"`
+	Version           string             `json:"version"`
+	SessionID         string             `json:"session_id"`
+	SessionName       string             `json:"session_name"`
+	TranscriptPath    string             `json:"transcript_path"`
+	ContextWindow     *ContextWindowInfo `json:"context_window"`
+	Cost              *CostInfo          `json:"cost"`
+	Exceeds200kTokens bool               `json:"exceeds_200k_tokens"`
+	OutputStyle       *OutputStyleInfo   `json:"output_style"`
+	Effort            *EffortInfo        `json:"effort"`
+	Thinking          *ThinkingInfo      `json:"thinking"`
+	RateLimits        *RateLimitsInfo    `json:"rate_limits"`
+	Vim               *VimInfo           `json:"vim"`
+	Agent             *AgentInfo         `json:"agent"`
+	PR                *PRInfo            `json:"pr"`
+	Worktree          *WorktreeInfo      `json:"worktree"`
 }
 
 // ModelInfo contains information about the model.
@@ -42,7 +52,71 @@ type ModelInfo struct {
 
 // WorkspaceInfo contains workspace information.
 type WorkspaceInfo struct {
-	CurrentDir string `json:"current_dir"`
+	CurrentDir  string    `json:"current_dir"`
+	ProjectDir  string    `json:"project_dir"`
+	AddedDirs   []string  `json:"added_dirs"`
+	GitWorktree string    `json:"git_worktree"`
+	Repo        *RepoInfo `json:"repo"`
+}
+
+// RepoInfo contains repository identity parsed from the origin remote.
+type RepoInfo struct {
+	Host  string `json:"host"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+}
+
+// OutputStyleInfo contains the active output style.
+type OutputStyleInfo struct {
+	Name string `json:"name"`
+}
+
+// EffortInfo contains the reasoning effort level.
+type EffortInfo struct {
+	Level string `json:"level"`
+}
+
+// ThinkingInfo contains extended thinking state.
+type ThinkingInfo struct {
+	Enabled bool `json:"enabled"`
+}
+
+// RateLimitsInfo contains Pro/Max rate-limit usage windows.
+type RateLimitsInfo struct {
+	FiveHour *RateLimitWindow `json:"five_hour"`
+	SevenDay *RateLimitWindow `json:"seven_day"`
+}
+
+// RateLimitWindow describes a single rate-limit window.
+type RateLimitWindow struct {
+	UsedPercentage float64 `json:"used_percentage"`
+	ResetsAt       int64   `json:"resets_at"`
+}
+
+// VimInfo contains vim mode state.
+type VimInfo struct {
+	Mode string `json:"mode"`
+}
+
+// AgentInfo contains the active agent name.
+type AgentInfo struct {
+	Name string `json:"name"`
+}
+
+// PRInfo contains the open PR for the current branch.
+type PRInfo struct {
+	Number      int    `json:"number"`
+	URL         string `json:"url"`
+	ReviewState string `json:"review_state"`
+}
+
+// WorktreeInfo contains --worktree session metadata.
+type WorktreeInfo struct {
+	Name           string `json:"name"`
+	Path           string `json:"path"`
+	Branch         string `json:"branch"`
+	OriginalCwd    string `json:"original_cwd"`
+	OriginalBranch string `json:"original_branch"`
 }
 
 // ContextWindowInfo contains context window data provided by Claude Code.
@@ -142,7 +216,7 @@ func NewBuilder(cfg *config.Config, workDir, sessionID string) (*Builder, error)
 		slog.Debug("git client initialization skipped", "workDir", workDir, "err", err)
 	}
 
-	// Initialize task tracker via registry (priority: claude > kt > tk > beads)
+	// Initialize task tracker via registry (priority: claude > kt > tk)
 	b.taskProvider = tasks.SelectProvider(workDir, sessionID)
 
 	return b, nil
@@ -173,6 +247,8 @@ func (b *Builder) Build(input Input) template.StatusData {
 	if data.Model == "" {
 		data.Model = "Claude"
 	}
+
+	populateFromInput(&data, input)
 
 	// Parse token metrics from transcript
 	metrics := b.populateTokenMetrics(&data, input)
@@ -221,6 +297,57 @@ func (b *Builder) Build(input Input) template.StatusData {
 	}
 
 	return data
+}
+
+// populateFromInput copies optional stdin fields into the status template data.
+func populateFromInput(data *template.StatusData, input Input) {
+	data.ProjectDir = input.Workspace.ProjectDir
+	data.AddedDirs = input.Workspace.AddedDirs
+	data.GitWorktree = input.Workspace.GitWorktree
+	if r := input.Workspace.Repo; r != nil {
+		data.RepoHost = r.Host
+		data.RepoOwner = r.Owner
+		data.RepoName = r.Name
+	}
+	data.SessionName = input.SessionName
+	data.Exceeds200kTokens = input.Exceeds200kTokens
+	if input.OutputStyle != nil {
+		data.OutputStyle = input.OutputStyle.Name
+	}
+	if input.Effort != nil {
+		data.EffortLevel = input.Effort.Level
+	}
+	if input.Thinking != nil {
+		data.ThinkingEnabled = input.Thinking.Enabled
+	}
+	if input.Vim != nil {
+		data.VimMode = input.Vim.Mode
+	}
+	if input.Agent != nil {
+		data.AgentName = input.Agent.Name
+	}
+	if rl := input.RateLimits; rl != nil {
+		if w := rl.FiveHour; w != nil {
+			data.RateLimitFiveHourPct = w.UsedPercentage
+			data.RateLimitFiveHourResetsAt = w.ResetsAt
+		}
+		if w := rl.SevenDay; w != nil {
+			data.RateLimitSevenDayPct = w.UsedPercentage
+			data.RateLimitSevenDayResetsAt = w.ResetsAt
+		}
+	}
+	if pr := input.PR; pr != nil {
+		data.PRNumber = pr.Number
+		data.PRURL = pr.URL
+		data.PRReviewState = pr.ReviewState
+	}
+	if wt := input.Worktree; wt != nil {
+		data.WorktreeName = wt.Name
+		data.WorktreePath = wt.Path
+		data.WorktreeBranch = wt.Branch
+		data.WorktreeOriginalCwd = wt.OriginalCwd
+		data.WorktreeOriginalBranch = wt.OriginalBranch
+	}
 }
 
 // populateTokenMetrics populates token metrics from context_window (preferred)

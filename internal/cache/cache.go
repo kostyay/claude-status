@@ -506,7 +506,7 @@ func (m *Manager) load() *CacheFile {
 	return &cache
 }
 
-// maxCacheAge is the maximum age for cached beads stats entries before eviction.
+// maxCacheAge is the maximum age for cached task stats entries before eviction.
 const maxCacheAge = 7 * 24 * time.Hour // 1 week
 
 // save writes the cache file to disk and updates the in-memory cache.

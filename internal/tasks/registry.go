@@ -19,7 +19,7 @@ var registry []registeredProvider
 
 // RegisterWithPriority adds a provider factory with a specific priority.
 // Lower priority values are checked first. Use constants:
-// PriorityKT=10, PriorityTK=20, PriorityBeads=30
+// PriorityClaude=5, PriorityKT=10, PriorityTK=20
 func RegisterWithPriority(priority int, factory ProviderFactory) {
 	registry = append(registry, registeredProvider{factory: factory, priority: priority})
 	// Keep sorted by priority
@@ -33,7 +33,6 @@ const (
 	PriorityClaude = 5  // claude tasks has highest priority
 	PriorityKT     = 10 // kt has second priority
 	PriorityTK     = 20 // tk has third priority
-	PriorityBeads  = 30 // beads has lowest priority
 )
 
 // SelectProvider returns the first available provider for the working directory and session.
