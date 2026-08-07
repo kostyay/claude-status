@@ -112,6 +112,16 @@ type mockTaskProvider struct {
 	nextTask  string
 }
 
+type mockPricingProvider struct {
+	price   pricing.Price
+	lookups int
+}
+
+func (m *mockPricingProvider) Lookup(string) (pricing.Price, bool) {
+	m.lookups++
+	return m.price, true
+}
+
 func (m *mockTaskProvider) Name() string {
 	return m.name
 }
@@ -855,6 +865,35 @@ func TestBuild_ContextLimitFromPricingWhenAssumptionOverflows(t *testing.T) {
 
 	if data.ContextPct != 50 {
 		t.Errorf("ContextPct = %v, want 50 (500k of the 1M limit from models.dev)", data.ContextPct)
+	}
+}
+
+func TestBuild_ContextLimitResolvedOnce(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	prices := &mockPricingProvider{price: pricing.Price{ContextLimit: 1_000_000}}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+	builder.SetPricingProvider(prices)
+
+	transcriptPath := t.TempDir() + "/transcript.jsonl"
+	jsonlContent := `{"parentUuid":"1","isSidechain":false,"type":"assistant","message":{"role":"assistant","usage":{"input_tokens":500000}}}
+`
+	if err := writeTestFile(transcriptPath, jsonlContent); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	data := builder.Build(Input{
+		Model:          ModelInfo{ID: "claude-opus-5", DisplayName: "Opus"},
+		Workspace:      WorkspaceInfo{CurrentDir: "/p"},
+		TranscriptPath: transcriptPath,
+		Cost:           &CostInfo{},
+	})
+
+	if prices.lookups != 1 {
+		t.Errorf("pricing lookups = %d, want 1", prices.lookups)
+	}
+	if data.ContextPct != 50 || data.ContextWindowSize != 1_000_000 {
+		t.Errorf("context = %.1f%% of %d, want 50%% of 1000000", data.ContextPct, data.ContextWindowSize)
 	}
 }
 

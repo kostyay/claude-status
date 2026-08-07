@@ -354,17 +354,12 @@ func populateFromInput(data *template.StatusData, input Input) {
 // or transcript (fallback) and returns the metrics used for cost calculations.
 func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) tokens.Metrics {
 	// Prefer context_window data from Claude Code stdin, else parse the transcript.
-	var m tokens.Metrics
 	if input.ContextWindow != nil && input.ContextWindow.UsedPercentage != nil {
-		m = b.populateFromContextWindow(data, input)
-	} else {
-		m = b.populateFromTranscript(data, input)
+		m := b.populateFromContextWindow(data, input)
+		data.ContextWindowSize = b.contextConfig(input, m.ContextLength).MaxTokens
+		return m
 	}
-
-	// Resolved here so both paths report the same window, even when neither
-	// produced metrics.
-	data.ContextWindowSize = b.contextConfig(input, m.ContextLength).MaxTokens
-	return m
+	return b.populateFromTranscript(data, input)
 }
 
 // populateFromContextWindow uses pre-calculated context data from Claude Code.
@@ -420,17 +415,18 @@ func (b *Builder) contextConfig(input Input, contextLength int64) tokens.Context
 
 // populateFromTranscript parses the transcript JSONL file for token metrics.
 func (b *Builder) populateFromTranscript(data *template.StatusData, input Input) tokens.Metrics {
-	if input.TranscriptPath == "" {
-		return tokens.Metrics{}
-	}
-
-	metrics, err := tokens.ParseTranscript(input.TranscriptPath)
-	if err != nil {
-		slog.Debug("failed to parse transcript", "path", input.TranscriptPath, "err", err)
-		return tokens.Metrics{}
+	var metrics tokens.Metrics
+	if input.TranscriptPath != "" {
+		var err error
+		metrics, err = tokens.ParseTranscript(input.TranscriptPath)
+		if err != nil {
+			slog.Debug("failed to parse transcript", "path", input.TranscriptPath, "err", err)
+			metrics = tokens.Metrics{}
+		}
 	}
 
 	ctxCfg := b.contextConfig(input, metrics.ContextLength)
+	data.ContextWindowSize = ctxCfg.MaxTokens
 
 	// Populate raw values (formatting is done in templates via fmtTokens/fmtPct)
 	data.TokensInput = metrics.InputTokens
