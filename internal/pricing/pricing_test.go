@@ -16,7 +16,7 @@ import (
 const sampleAPI = `{
   "anthropic": {
     "models": {
-      "claude-opus-4-7": {"cost": {"input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25}},
+      "claude-opus-4-7": {"cost": {"input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25}, "limit": {"context": 1000000, "output": 128000}},
       "claude-sonnet-4-6": {"cost": {"input": 3, "output": 15, "cache_read": 0.3, "cache_write": 3.75}}
     }
   }
@@ -32,6 +32,12 @@ func TestParseAPI(t *testing.T) {
 	}
 	if got, want := tbl["claude-sonnet-4-6"].CacheWrite, 3.75; got != want {
 		t.Errorf("sonnet cache_write = %v, want %v", got, want)
+	}
+	if got, want := tbl["claude-opus-4-7"].ContextLimit, int64(1_000_000); got != want {
+		t.Errorf("opus context limit = %v, want %v", got, want)
+	}
+	if got, want := tbl["claude-sonnet-4-6"].ContextLimit, int64(0); got != want {
+		t.Errorf("sonnet context limit = %v, want %v (absent in api.json)", got, want)
 	}
 }
 
@@ -103,6 +109,7 @@ func TestLoad_UsesFreshCache(t *testing.T) {
 	dir := t.TempDir()
 	// Seed a fresh cache; server must never be hit.
 	seed := cacheFile{
+		Version: cacheVersion,
 		SavedAt: time.Now(),
 		Table:   Table{"claude-opus-4-7": {Input: 99}},
 	}
@@ -130,9 +137,70 @@ func TestLoad_UsesFreshCache(t *testing.T) {
 	}
 }
 
+// writeOldVersionCache seeds a cache in the pre-versioning on-disk format: fresh
+// by timestamp, but missing every field added since.
+func writeOldVersionCache(t *testing.T, dir string) {
+	t.Helper()
+	body := `{"saved_at":"` + time.Now().Format(time.RFC3339) +
+		`","table":{"claude-opus-4-7":{"input":99}}}`
+	if err := os.WriteFile(filepath.Join(dir, "models.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoad_OldCacheVersionRefetches(t *testing.T) {
+	dir := t.TempDir()
+	writeOldVersionCache(t, dir)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(sampleAPI))
+	}))
+	defer srv.Close()
+
+	tbl, err := Load(context.Background(), dir, srv.URL, time.Hour)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if tbl["claude-opus-4-7"].ContextLimit != 1_000_000 {
+		t.Errorf("expected refetched table with context limit, got %+v", tbl["claude-opus-4-7"])
+	}
+}
+
+// An outdated cache is still better than nothing: an offline run keeps serving
+// its prices, and re-stamps them so the next run doesn't pay the fetch timeout
+// again on every render.
+func TestLoad_OldCacheVersionSurvivesFetchFailure(t *testing.T) {
+	dir := t.TempDir()
+	writeOldVersionCache(t, dir)
+
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "boom", 500)
+	}))
+	defer srv.Close()
+
+	tbl, err := Load(context.Background(), dir, srv.URL, time.Hour)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if tbl["claude-opus-4-7"].Input != 99 {
+		t.Errorf("expected fallback to old-version cache, got %+v", tbl["claude-opus-4-7"])
+	}
+
+	// Second run must be served from disk, not another failed fetch.
+	if _, err := Load(context.Background(), dir, srv.URL, time.Hour); err != nil {
+		t.Fatalf("second Load: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("server hit %d times, want 1 (cache should be re-stamped)", hits)
+	}
+}
+
 func TestLoad_StaleCacheRefetches(t *testing.T) {
 	dir := t.TempDir()
 	seed := cacheFile{
+		Version: cacheVersion,
 		SavedAt: time.Now().Add(-30 * 24 * time.Hour),
 		Table:   Table{"claude-opus-4-7": {Input: 99}},
 	}
@@ -156,6 +224,7 @@ func TestLoad_StaleCacheRefetches(t *testing.T) {
 func TestLoad_FallsBackToStaleOnFetchFailure(t *testing.T) {
 	dir := t.TempDir()
 	seed := cacheFile{
+		Version: cacheVersion,
 		SavedAt: time.Now().Add(-30 * 24 * time.Hour),
 		Table:   Table{"claude-opus-4-7": {Input: 42}},
 	}

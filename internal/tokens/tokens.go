@@ -47,18 +47,21 @@ type ContextConfig struct {
 	UsableTokens int64 // Usable context before auto-compact (AutoCompactThreshold of max)
 }
 
-// GetContextConfig returns context limits based on model ID.
-// Models with "[1m]" suffix (Opus 4.6, Sonnet 4.5, Sonnet 4) have 1M context, all others have 200k.
+// GetContextConfig infers context limits from a model ID, for when Claude Code
+// does not report the session's window size. Models carrying the "[1m]" suffix
+// get 1M, all others 200k.
 func GetContextConfig(modelID string) ContextConfig {
 	if Has1MContext(modelID) {
-		return ContextConfig{
-			MaxTokens:    1_000_000,
-			UsableTokens: int64(1_000_000 * AutoCompactThreshold),
-		}
+		return NewContextConfig(1_000_000)
 	}
+	return NewContextConfig(200_000)
+}
+
+// NewContextConfig derives the usable-token threshold from a context window size.
+func NewContextConfig(maxTokens int64) ContextConfig {
 	return ContextConfig{
-		MaxTokens:    200_000,
-		UsableTokens: int64(200_000 * AutoCompactThreshold),
+		MaxTokens:    maxTokens,
+		UsableTokens: int64(float64(maxTokens) * AutoCompactThreshold),
 	}
 }
 

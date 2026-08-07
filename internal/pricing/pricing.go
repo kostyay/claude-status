@@ -1,6 +1,6 @@
-// Package pricing fetches Anthropic per-model rates from models.dev and
-// computes session cost. Acts as a fallback when Claude Code does not
-// supply total_cost_usd on stdin (older versions, standalone -test runs).
+// Package pricing fetches Anthropic per-model rates and context limits from
+// models.dev and computes session cost. Acts as a fallback when Claude Code does
+// not supply total_cost_usd on stdin (older versions, standalone -test runs).
 package pricing
 
 import (
@@ -24,14 +24,20 @@ const (
 
 	defaultHTTPTimeout = 5 * time.Second
 	cacheFilename      = "models.json"
+
+	// cacheVersion invalidates on-disk caches written before a field was added
+	// to Price, so a warm cache doesn't hide new data until the TTL expires.
+	cacheVersion = 1
 )
 
-// Price holds per-million-token USD pricing for a single model.
+// Price holds per-million-token USD pricing for a single model, plus the
+// context window that model supports (0 when models.dev doesn't report one).
 type Price struct {
-	Input      float64 `json:"input"`
-	Output     float64 `json:"output"`
-	CacheRead  float64 `json:"cache_read"`
-	CacheWrite float64 `json:"cache_write"`
+	Input        float64 `json:"input"`
+	Output       float64 `json:"output"`
+	CacheRead    float64 `json:"cache_read"`
+	CacheWrite   float64 `json:"cache_write"`
+	ContextLimit int64   `json:"context_limit"`
 }
 
 type Table map[string]Price
@@ -39,12 +45,16 @@ type Table map[string]Price
 type modelsDevAPI struct {
 	Anthropic struct {
 		Models map[string]struct {
-			Cost Price `json:"cost"`
+			Cost  Price `json:"cost"`
+			Limit struct {
+				Context int64 `json:"context"`
+			} `json:"limit"`
 		} `json:"models"`
 	} `json:"anthropic"`
 }
 
 type cacheFile struct {
+	Version int       `json:"version"`
 	SavedAt time.Time `json:"saved_at"`
 	Table   Table     `json:"table"`
 }
@@ -107,6 +117,7 @@ func parseAPI(body []byte) (Table, error) {
 	}
 	t := make(Table, len(api.Anthropic.Models))
 	for id, m := range api.Anthropic.Models {
+		m.Cost.ContextLimit = m.Limit.Context
 		t[id] = m.Cost
 	}
 	if len(t) == 0 {
@@ -124,15 +135,20 @@ func Load(ctx context.Context, cacheDir, url string, ttl time.Duration) (Table, 
 	}
 	path := filepath.Join(cacheDir, cacheFilename)
 	cached, cachedErr := readCache(path)
-	if cachedErr == nil && time.Since(cached.SavedAt) < ttl {
+	if cachedErr == nil && cached.Version == cacheVersion && time.Since(cached.SavedAt) < ttl {
 		return cached.Table, nil
 	}
 	fresh, fetchErr := Fetch(ctx, url)
 	if fetchErr != nil {
-		if cachedErr == nil {
-			return cached.Table, nil
+		if cachedErr != nil {
+			return nil, fetchErr
 		}
-		return nil, fetchErr
+		// Re-stamp so the next run reads the cache instead of paying the fetch
+		// timeout again on every render. Costs one more TTL of stale prices.
+		if err := writeCache(path, cached.Table); err != nil {
+			slog.Debug("pricing: restamp cache failed", "path", path, "err", err)
+		}
+		return cached.Table, nil
 	}
 	if err := writeCache(path, fresh); err != nil {
 		slog.Debug("pricing: write cache failed", "path", path, "err", err)
@@ -158,7 +174,7 @@ func writeCache(path string, t Table) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(cacheFile{SavedAt: time.Now(), Table: t}, "", "  ")
+	b, err := json.MarshalIndent(cacheFile{Version: cacheVersion, SavedAt: time.Now(), Table: t}, "", "  ")
 	if err != nil {
 		return err
 	}
