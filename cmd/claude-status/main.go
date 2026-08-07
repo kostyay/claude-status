@@ -18,7 +18,7 @@ import (
 var prefixFlag = flag.String("prefix", "", "Prefix to display at the start of the status line")
 var prefixColorFlag = flag.String("prefix-color", "", "Color for the prefix (cyan, blue, green, yellow, red, magenta, gray)")
 
-var installFlag = flag.Bool("install", false, "Run installation wizard")
+var installFlag = flag.Bool("install", false, "Run installation wizard (target: claude, codex, or all)")
 var testFlag = flag.Bool("test", false, "Test mode: use current directory, skip stdin")
 
 func main() {
@@ -26,7 +26,16 @@ func main() {
 
 	// Handle -install flag
 	if *installFlag {
-		if err := install.Run(os.Stdout, os.Stdin); err != nil {
+		target, err := install.ParseTarget(flag.Arg(0))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		if flag.NArg() > 1 {
+			fmt.Fprintln(os.Stderr, "Error: install accepts at most one target: claude, codex, or all")
+			os.Exit(1)
+		}
+		if err := install.RunTarget(os.Stdout, os.Stdin, target); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}

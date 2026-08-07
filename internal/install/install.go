@@ -1,4 +1,4 @@
-// Package install provides functionality to install claude-status into Claude Code settings.
+// Package install configures status lines for Claude Code and Codex.
 package install
 
 import (
@@ -13,6 +13,30 @@ import (
 	"github.com/pmezard/go-difflib/difflib"
 )
 
+// Target identifies the application whose status line should be configured.
+type Target string
+
+const (
+	TargetClaude Target = "claude"
+	TargetCodex  Target = "codex"
+	TargetAll    Target = "all"
+)
+
+// ParseTarget parses an optional install target. An empty target preserves the
+// original -install behavior and installs for Claude Code.
+func ParseTarget(value string) (Target, error) {
+	switch Target(strings.ToLower(strings.TrimSpace(value))) {
+	case "", TargetClaude:
+		return TargetClaude, nil
+	case TargetCodex:
+		return TargetCodex, nil
+	case TargetAll:
+		return TargetAll, nil
+	default:
+		return "", fmt.Errorf("unknown install target %q (expected claude, codex, or all)", value)
+	}
+}
+
 // StatusLine represents the statusLine configuration object for Claude Code.
 type StatusLine struct {
 	Type    string `json:"type"`
@@ -20,8 +44,35 @@ type StatusLine struct {
 	Padding int    `json:"padding"`
 }
 
-// Run executes the install flow: shows diff, prompts for confirmation, writes settings.
+// Run executes the original Claude Code install flow.
 func Run(w io.Writer, r io.Reader) error {
+	return RunTarget(w, r, TargetClaude)
+}
+
+// RunTarget executes the install flow for the selected application.
+func RunTarget(w io.Writer, r io.Reader, target Target) error {
+	reader, ok := r.(*bufio.Reader)
+	if !ok {
+		reader = bufio.NewReader(r)
+	}
+
+	switch target {
+	case TargetClaude:
+		return runClaude(w, reader)
+	case TargetCodex:
+		return runCodex(w, reader)
+	case TargetAll:
+		if err := runClaude(w, reader); err != nil {
+			return err
+		}
+		fmt.Fprintln(w)
+		return runCodex(w, reader)
+	default:
+		return fmt.Errorf("unsupported install target %q", target)
+	}
+}
+
+func runClaude(w io.Writer, r io.Reader) error {
 	// Get the binary path
 	binaryPath, err := os.Executable()
 	if err != nil {
@@ -155,9 +206,11 @@ func ShowDiff(w io.Writer, path string, before, after map[string]any) {
 	}
 
 	result, _ := difflib.GetUnifiedDiffString(diff)
+	writeColorizedDiff(w, result)
+}
 
-	// Colorize the diff output
-	for _, line := range strings.Split(result, "\n") {
+func writeColorizedDiff(w io.Writer, diff string) {
+	for _, line := range strings.Split(diff, "\n") {
 		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
 			fmt.Fprintf(w, "\033[32m%s\033[0m\n", line)
 		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
@@ -175,7 +228,10 @@ func ShowDiff(w io.Writer, path string, before, after map[string]any) {
 func PromptConfirm(w io.Writer, r io.Reader) bool {
 	fmt.Fprint(w, "Apply changes? [y/N]: ")
 
-	reader := bufio.NewReader(r)
+	reader, ok := r.(*bufio.Reader)
+	if !ok {
+		reader = bufio.NewReader(r)
+	}
 	response, err := reader.ReadString('\n')
 	if err != nil {
 		return false

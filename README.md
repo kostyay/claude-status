@@ -4,7 +4,7 @@
   <img src="https://raw.githubusercontent.com/kostyay/claude-status/main/.github/logo.png" alt="claude-status logo" width="200">
 </p>
 
-A fast, lightweight status line for [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) written in Go.
+A fast, lightweight status-line configurator for [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and [Codex CLI](https://developers.openai.com/codex/cli), written in Go.
 
  ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go) ![License](https://img.shields.io/badge/License-MIT-green)
 
@@ -24,6 +24,7 @@ work | [Sonnet 4] | 📁 my-project | 🌿 main ±3 +42,-10 ✨2📝1 | ✅ | �
 - **Customizable** - Full Go template support with ANSI colors
 - **Zero Config** - Works out of the box with sensible defaults
 - **XDG Compliant** - Config, cache, and data stored in standard locations
+- **Codex Support** - Configures the native Codex CLI status line without replacing other TOML settings
 
 ## Installation
 
@@ -44,6 +45,18 @@ make build
 
 ## Quick Start
 
+The installer accepts an optional target:
+
+| Command | Configures |
+|---------|------------|
+| `claude-status -install` | Claude Code (default) |
+| `claude-status -install codex` | Codex CLI |
+| `claude-status -install all` | Claude Code, then Codex CLI |
+
+Each install shows a diff and asks for confirmation before writing changes.
+
+### Claude Code
+
 The easiest way to configure Claude Code is with the built-in install command:
 
 ```bash
@@ -51,6 +64,7 @@ The easiest way to configure Claude Code is with the built-in install command:
 ```
 
 This will:
+
 1. Show a diff of the changes to `~/.claude/settings.json`
 2. Ask for confirmation before applying
 3. Preserve any existing settings
@@ -68,6 +82,43 @@ Alternatively, manually add to your Claude Code settings (`~/.claude/settings.js
 ```
 
 That's it! The status line will appear in your Claude Code sessions.
+
+### Codex
+
+Codex renders its own native status line rather than invoking an external status command. Configure it with:
+
+```bash
+./claude-status -install codex
+```
+
+This updates `~/.codex/config.toml` while preserving unrelated settings, comments, and formatting. If the file has no `[tui]` table, the installer adds one; if `tui.status_line` already exists, it replaces only that assignment.
+
+The generated status line is ordered for narrow terminals:
+
+- Model and reasoning effort, run state, and context use appear first
+- Five-hour and weekly usage limits follow
+- Git branch and the short project name appear when space remains
+
+If `CODEX_HOME` is set, the installer updates `$CODEX_HOME/config.toml`. To configure both clients in one pass, run `./claude-status -install all`; each config change has its own confirmation prompt.
+
+Codex renders these items itself. `claude-status` can select and order them, but it cannot rename native labels such as `Context` or `Weekly`.
+
+The equivalent manual Codex configuration is:
+
+```toml
+[tui]
+status_line = [
+  "model-with-reasoning",
+  "run-state",
+  "context-used",
+  "five-hour-limit",
+  "weekly-limit",
+  "git-branch",
+  "project-name",
+]
+```
+
+See the [Codex configuration reference](https://developers.openai.com/codex/config-reference) for `tui.status_line` details.
 
 ### Multi-Profile Support
 
@@ -91,6 +142,12 @@ If you use a custom Claude Code config directory, set `CLAUDE_CONFIG_DIR`:
 
 ```bash
 CLAUDE_CONFIG_DIR=/custom/path ./claude-status -install
+```
+
+For Codex, set `CODEX_HOME`:
+
+```bash
+CODEX_HOME=/custom/path ./claude-status -install codex
 ```
 
 ## What It Shows
