@@ -791,6 +791,10 @@ func TestBuild_ContextWindowNullPercentage(t *testing.T) {
 	if data.ContextPct != 0 {
 		t.Errorf("ContextPct = %v, want 0 (null percentage should fallback)", data.ContextPct)
 	}
+	// The reported window is still the window, even with nothing to measure.
+	if data.ContextWindowSize != 200_000 {
+		t.Errorf("ContextWindowSize = %d, want 200000", data.ContextWindowSize)
+	}
 }
 
 func TestBuild_ContextWindowFallback(t *testing.T) {
@@ -823,6 +827,96 @@ func TestBuild_ContextWindowFallback(t *testing.T) {
 	}
 	if data.ContextPct == 0 {
 		t.Error("ContextPct should not be zero (transcript has data)")
+	}
+}
+
+func TestBuild_ContextLimitFromPricingWhenAssumptionOverflows(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{
+		"claude-opus-5": {Input: 5, Output: 25, ContextLimit: 1_000_000},
+	}))
+
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/transcript.jsonl"
+	// 400k input + 100k cache read = 500k context, half of the 1M window.
+	jsonlContent := `{"parentUuid":"1","isSidechain":false,"type":"assistant","message":{"role":"assistant","usage":{"input_tokens":400000,"output_tokens":5000,"cache_read_input_tokens":100000,"cache_creation_input_tokens":0}}}
+`
+	if err := writeTestFile(transcriptPath, jsonlContent); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	data := builder.Build(Input{
+		Model:          ModelInfo{ID: "claude-opus-5", DisplayName: "Opus"},
+		Workspace:      WorkspaceInfo{CurrentDir: "/p"},
+		TranscriptPath: transcriptPath,
+	})
+
+	if data.ContextPct != 50 {
+		t.Errorf("ContextPct = %v, want 50 (500k of the 1M limit from models.dev)", data.ContextPct)
+	}
+}
+
+func TestBuild_ContextLimitKeeps200kWhenUsageFits(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{
+		"claude-sonnet-4-5": {Input: 3, Output: 15, ContextLimit: 1_000_000},
+	}))
+
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/transcript.jsonl"
+	// 100k context: fits 200k, so there is no evidence of a larger window.
+	jsonlContent := `{"parentUuid":"1","isSidechain":false,"type":"assistant","message":{"role":"assistant","usage":{"input_tokens":100000,"output_tokens":5000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+`
+	if err := writeTestFile(transcriptPath, jsonlContent); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	data := builder.Build(Input{
+		Model:          ModelInfo{ID: "claude-sonnet-4-5", DisplayName: "Sonnet"},
+		Workspace:      WorkspaceInfo{CurrentDir: "/p"},
+		TranscriptPath: transcriptPath,
+	})
+
+	if data.ContextPct != 50 {
+		t.Errorf("ContextPct = %v, want 50 (100k of the assumed 200k window)", data.ContextPct)
+	}
+}
+
+// Claude Code's own window size outranks both the "[1m]" suffix and models.dev.
+func TestBuild_ContextWindowSizeBeatsModelHeuristics(t *testing.T) {
+	cfg := config.Default()
+	cache := &mockCacheProvider{}
+	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
+	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{
+		"claude-opus-5": {Input: 5, ContextLimit: 1_000_000},
+	}))
+
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/transcript.jsonl"
+	jsonlContent := `{"parentUuid":"1","isSidechain":false,"type":"assistant","message":{"role":"assistant","usage":{"input_tokens":250000,"output_tokens":5000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+`
+	if err := writeTestFile(transcriptPath, jsonlContent); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// No used_percentage, so this falls to the transcript path — but the
+	// reported 500k window still wins over the 200k/1M guesses.
+	data := builder.Build(Input{
+		Model:          ModelInfo{ID: "claude-opus-5", DisplayName: "Opus"},
+		Workspace:      WorkspaceInfo{CurrentDir: "/p"},
+		TranscriptPath: transcriptPath,
+		ContextWindow:  &ContextWindowInfo{ContextWindowSize: 500_000},
+	})
+
+	if data.ContextPct != 50 {
+		t.Errorf("ContextPct = %v, want 50 (250k of the reported 500k window)", data.ContextPct)
+	}
+	if data.ContextWindowSize != 500_000 {
+		t.Errorf("ContextWindowSize = %d, want 500000", data.ContextWindowSize)
 	}
 }
 

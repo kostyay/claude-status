@@ -353,13 +353,18 @@ func populateFromInput(data *template.StatusData, input Input) {
 // populateTokenMetrics populates token metrics from context_window (preferred)
 // or transcript (fallback) and returns the metrics used for cost calculations.
 func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) tokens.Metrics {
-	// Prefer context_window data from Claude Code stdin when available
+	// Prefer context_window data from Claude Code stdin, else parse the transcript.
+	var m tokens.Metrics
 	if input.ContextWindow != nil && input.ContextWindow.UsedPercentage != nil {
-		return b.populateFromContextWindow(data, input)
+		m = b.populateFromContextWindow(data, input)
+	} else {
+		m = b.populateFromTranscript(data, input)
 	}
 
-	// Fall back to transcript parsing
-	return b.populateFromTranscript(data, input)
+	// Resolved here so both paths report the same window, even when neither
+	// produced metrics.
+	data.ContextWindowSize = b.contextConfig(input, m.ContextLength).MaxTokens
+	return m
 }
 
 // populateFromContextWindow uses pre-calculated context data from Claude Code.
@@ -367,7 +372,6 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 	cw := input.ContextWindow
 
 	data.ContextPct = *cw.UsedPercentage
-	data.ContextWindowSize = cw.ContextWindowSize
 
 	// Scale to usable context (auto-compact threshold)
 	data.ContextPctUse = min(*cw.UsedPercentage/tokens.AutoCompactThreshold, 100)
@@ -395,6 +399,25 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 	return m
 }
 
+// contextConfig resolves the session's context window, most authoritative first:
+// the size Claude Code reports, then the "[1m]" model-ID suffix. Older Claude Code
+// supplies neither, so as a last resort trust models.dev's limit — but only once
+// observed usage proves the assumed window too small, since models.dev reports
+// what a model supports, not how this session was configured.
+func (b *Builder) contextConfig(input Input, contextLength int64) tokens.ContextConfig {
+	if cw := input.ContextWindow; cw != nil && cw.ContextWindowSize > 0 {
+		return tokens.NewContextConfig(cw.ContextWindowSize)
+	}
+	cfg := tokens.GetContextConfig(input.Model.ID)
+	if contextLength <= cfg.MaxTokens || b.pricing == nil {
+		return cfg
+	}
+	if p, ok := b.pricing.Lookup(input.Model.ID); ok && p.ContextLimit > cfg.MaxTokens {
+		return tokens.NewContextConfig(p.ContextLimit)
+	}
+	return cfg
+}
+
 // populateFromTranscript parses the transcript JSONL file for token metrics.
 func (b *Builder) populateFromTranscript(data *template.StatusData, input Input) tokens.Metrics {
 	if input.TranscriptPath == "" {
@@ -407,8 +430,7 @@ func (b *Builder) populateFromTranscript(data *template.StatusData, input Input)
 		return tokens.Metrics{}
 	}
 
-	// Get context config based on model
-	ctxCfg := tokens.GetContextConfig(input.Model.ID)
+	ctxCfg := b.contextConfig(input, metrics.ContextLength)
 
 	// Populate raw values (formatting is done in templates via fmtTokens/fmtPct)
 	data.TokensInput = metrics.InputTokens
