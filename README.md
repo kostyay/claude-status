@@ -91,13 +91,13 @@ Codex renders its own native status line rather than invoking an external status
 ./claude-status -install codex
 ```
 
-This updates `~/.codex/config.toml` while preserving unrelated settings, comments, and formatting. If the file has no `[tui]` table, the installer adds one; if `tui.status_line` already exists, it replaces only that assignment.
+This updates `~/.codex/config.toml` while preserving unrelated settings, comments, and formatting. If the file has no `[tui]` table, the installer adds one (or writes `tui.status_line` beside existing root-level `tui.*` dotted keys); if `tui.status_line` already exists, it replaces only that assignment. An inline `tui = { ... }` table is reported as an error so you can edit it by hand.
 
 The generated status line is ordered for narrow terminals:
 
 - Model and reasoning effort, run state, and context use appear first
 - Five-hour and weekly usage limits follow
-- Git branch and the short project name appear when space remains
+- Git branch, pull request number, branch diff stats, and the short project name appear when space remains
 
 If `CODEX_HOME` is set, the installer updates `$CODEX_HOME/config.toml`. To configure both clients in one pass, run `./claude-status -install all`; each config change has its own confirmation prompt.
 
@@ -114,6 +114,8 @@ status_line = [
   "five-hour-limit",
   "weekly-limit",
   "git-branch",
+  "pull-request-number",
+  "branch-changes",
   "project-name",
 ]
 ```
@@ -163,23 +165,22 @@ CODEX_HOME=/custom/path ./claude-status -install codex
 | **Git Files** | New/modified/deleted/unstaged files | `✨2📝1🗑1⚡3` |
 | **GitHub CI** | Latest workflow run status | `✅` `❌` `🔄` |
 | **Pull Request** | Open PR for the branch (clickable in supported terminals) | `✅ #42` |
-| **Context %** | Usable context usage before auto-compact (color-coded) | `📊 56.5%` |
+| **Context %** | Context window used, as reported by Claude Code (color-coded) | `📊 45.2%` |
 | **Version** | Claude Code version | `v1.0.0` |
 | **Tasks** | Task tracking stats (if a supported task tracker is configured) | `📋 Tasks: 2 ready, 1 blocked` |
 
 ### Token Metrics (Available in Templates)
 
-All values are raw numbers. Use `fmtTokens` and `fmtPct` template functions to format them.
+All values are raw numbers. Use `fmtTokens` and `fmtPct` template functions to format them. With Claude Code stdin data, the token counts describe the last API call and `TokensTotal` is the tokens in context plus the last output; the transcript fallback for older Claude Code versions sums them over the session.
 
 | Metric | Description | Example (with formatting) |
 |--------|-------------|---------------------------|
 | **TokensInput** | Input tokens used | `{{fmtTokens .TokensInput}}` → `10.5k` |
 | **TokensOutput** | Output tokens generated | `{{fmtTokens .TokensOutput}}` → `5.2k` |
 | **TokensCached** | Cached tokens (read + creation) | `{{fmtTokens .TokensCached}}` → `35k` |
-| **TokensTotal** | Sum of all tokens | `{{fmtTokens .TokensTotal}}` → `50.7k` |
+| **TokensTotal** | Tokens in context plus last output | `{{fmtTokens .TokensTotal}}` → `50.7k` |
 | **ContextLength** | Current context window size | `{{fmtTokens .ContextLength}}` → `45.2k` |
-| **ContextPctUse** | Percentage of usable context (80% before auto-compact) - **default** | `{{fmtPct .ContextPctUse}}` → `56.5%` |
-| **ContextPct** | Percentage of max context used | `{{fmtPct .ContextPct}}` → `45.2%` |
+| **ContextPct** | Percentage of the context window used - **default** | `{{fmtPct .ContextPct}}` → `45.2%` |
 
 ### GitHub CI Status Icons
 
@@ -243,12 +244,14 @@ Create `~/.config/claude-status/config.json`:
 The default template shows a complete status line with prefix support, git diff stats, clickable PR link, and a second line for task tracking (if a task tracker is configured):
 
 ```
-{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .PRNumber}} | {{magenta}}{{link .PRURL (printf "%s #%d" (prEmoji .PRReviewState) .PRNumber)}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .TasksReady}}
+{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}{{if .EffortLevel}} 🧠 {{.EffortLevel}}{{end}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .PRNumber}} | {{magenta}}{{link .PRURL (printf "%s #%d" (prEmoji .PRReviewState) .PRNumber)}}{{reset}}{{end}}{{if .ContextPct}} | {{ctxColor .ContextPct}}📊 {{fmtPct .ContextPct}}{{reset}}{{end}}{{if .CostUSD}} | {{yellow}}💰 {{fmtCost .CostUSD}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .TasksReady}}
 {{yellow}}📋 {{.TaskProvider}}: {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{if .TasksNextTask}}. Next Up: {{.TasksNextTask}}{{end}}{{end}}
 ```
 
 Features:
 - **Prefix** - Optional profile identifier (via `--prefix` flag)
+- **Effort** - Reasoning effort next to the model (`🧠 high`), when the model supports it
+- **Session cost** - Total USD from Claude Code (models.dev pricing fallback)
 - **Context percentage** - Color-coded (green/yellow/red) based on usage
 - **Git diff stats** - Shows additions, deletions, and file changes
 - **Pull request** - Clickable PR number with review-state emoji
@@ -281,8 +284,7 @@ All values are raw numbers. Use template functions (`fmtTokens`, `fmtPct`, `fmtS
 | `.TokensCached` | int64 | Cached tokens |
 | `.TokensTotal` | int64 | Total tokens |
 | `.ContextLength` | int64 | Context length |
-| `.ContextPct` | float64 | Context percentage of max tokens (0-100) |
-| `.ContextPctUse` | float64 | Usable context percentage (0-100) - **used in default template** |
+| `.ContextPct` | float64 | Context window used (0-100) - **used in default template** |
 | `.ContextWindowSize` | int64 | Max context window in tokens (200k or 1M) |
 | `.CostUSD` | float64 | Session cost in USD (from Claude Code stdin) |
 | `.DurationMS` | int64 | Total wall-clock session duration (ms) |
@@ -312,6 +314,7 @@ All values are raw numbers. Use template functions (`fmtTokens`, `fmtPct`, `fmtS
 | `.SessionName` | string | Custom session name from `--name` or `/rename` |
 | `.OutputStyle` | string | Active output style name |
 | `.Exceeds200kTokens` | bool | Whether the last response exceeds 200k tokens |
+| `.FastMode` | bool | Whether fast mode is enabled |
 | `.EffortLevel` | string | Reasoning effort (`low`/`medium`/`high`/`xhigh`/`max`) |
 | `.ThinkingEnabled` | bool | Whether extended thinking is enabled |
 | `.VimMode` | string | Vim mode (`NORMAL`/`INSERT`/`VISUAL`/`VISUAL LINE`) |
@@ -333,6 +336,7 @@ All values are raw numbers. Use template functions (`fmtTokens`, `fmtPct`, `fmtS
 | `.PRNumber` | int | PR number (0 when absent) |
 | `.PRURL` | string | PR URL |
 | `.PRReviewState` | string | `approved`/`pending`/`changes_requested`/`draft` |
+| `.PRKind` | string | `mr` for a GitLab merge request, empty for a GitHub PR |
 
 #### Worktree session (`--worktree`)
 
@@ -349,7 +353,7 @@ All values are raw numbers. Use template functions (`fmtTokens`, `fmtPct`, `fmtS
 | Function | Description | Example |
 |----------|-------------|---------|
 | `{{fmtTokens .TokensInput}}` | Format token count (e.g., 10500 → "10.5k") | `{{fmtTokens .TokensTotal}}` |
-| `{{fmtPct .ContextPctUse}}` | Format percentage (e.g., 45.2 → "45.2%") | `{{fmtPct .ContextPct}}` |
+| `{{fmtPct .ContextPct}}` | Format percentage (e.g., 45.2 → "45.2%") | `{{fmtPct .ContextPct}}` |
 | `{{fmtSigned .GitAdditions}}` | Format with +/- prefix (e.g., 42 → "+42") | `{{fmtSigned .GitAdditions}}` |
 | `{{fmtCost .CostUSD}}` | Format USD amount (e.g., 0.01234 → "$0.01") | `{{fmtCost .CostUSD}}` |
 | `{{fmtDuration .DurationMS}}` | Format milliseconds (e.g., 125000 → "2m 5s") | `{{fmtDuration .DurationMS}}` |
@@ -369,7 +373,7 @@ All values are raw numbers. Use template functions (`fmtTokens`, `fmtPct`, `fmtS
 | `{{gray}}` | Gray color |
 | `{{bold}}` | Bold text |
 | `{{reset}}` | Reset formatting |
-| `{{ctxColor .ContextPctUse}}` | Dynamic color based on usable context: green (<50%), yellow (50-80%), red (>80%) |
+| `{{ctxColor .ContextPct}}` | Dynamic color based on context used: green (<50%), yellow (50-80%), red (>80%) |
 
 ### Example Templates
 
@@ -399,15 +403,15 @@ feature-branch ±5 ✅
 
 **With full token metrics:**
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{fmtTokens .TokensInput}} Out:{{fmtTokens .TokensOutput}} Cache:{{fmtTokens .TokensCached}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}
+{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{end}}{{if .TokensTotal}} | {{gray}}📈 In:{{fmtTokens .TokensInput}} Out:{{fmtTokens .TokensOutput}} Cache:{{fmtTokens .TokensCached}}{{reset}}{{end}}{{if .ContextPct}} | {{ctxColor .ContextPct}}📊 {{fmtPct .ContextPct}}{{reset}}{{end}}
 ```
 ```
 [Sonnet 4] | 📁 my-project | 🌿 main ±3 | 📈 In:10.5k Out:5.2k Cache:35k | 📊 56.5%
 ```
 
-**Context-focused (shows usable context percentage):**
+**Context-focused (shows context length and percentage):**
 ```
-{{cyan}}[{{.Model}}]{{reset}} | {{.Dir}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}Ctx: {{fmtTokens .ContextLength}} ({{fmtPct .ContextPctUse}}){{reset}}{{end}}
+{{cyan}}[{{.Model}}]{{reset}} | {{.Dir}}{{if .ContextPct}} | {{ctxColor .ContextPct}}Ctx: {{fmtTokens .ContextLength}} ({{fmtPct .ContextPct}}){{reset}}{{end}}
 ```
 ```
 [Sonnet 4] | my-project | Ctx: 45.2k (56.5%)

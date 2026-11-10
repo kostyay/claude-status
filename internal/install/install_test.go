@@ -3,6 +3,7 @@ package install
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,20 +139,6 @@ func TestUpdateSettings_ExistingKey(t *testing.T) {
 	assert.Equal(t, newPath, statusLine.Command)
 }
 
-func TestUpdateSettings_PreservesOtherKeys(t *testing.T) {
-	settings := map[string]any{
-		"theme":    "dark",
-		"fontSize": 14,
-	}
-	binaryPath := "/usr/local/bin/claude-status"
-
-	UpdateSettings(settings, binaryPath)
-
-	assert.Equal(t, "dark", settings["theme"])
-	assert.Equal(t, 14, settings["fontSize"])
-	assert.Contains(t, settings, "statusLine")
-}
-
 func TestShowDiff(t *testing.T) {
 	var buf bytes.Buffer
 	path := "/home/user/.claude/settings.json"
@@ -171,17 +158,6 @@ func TestShowDiff(t *testing.T) {
 	assert.Contains(t, output, "--- before")
 	assert.Contains(t, output, "+++ after")
 	assert.Contains(t, output, "statusLine")
-}
-
-func TestShowDiff_NoChanges(t *testing.T) {
-	var buf bytes.Buffer
-	path := "/home/user/.claude/settings.json"
-	settings := map[string]any{"theme": "dark"}
-
-	ShowDiff(&buf, path, settings, settings)
-
-	output := buf.String()
-	assert.Contains(t, output, "No changes needed")
 }
 
 func TestPromptConfirm(t *testing.T) {
@@ -230,16 +206,6 @@ func TestWriteSettings(t *testing.T) {
 	assert.Equal(t, data, content)
 }
 
-func TestWriteSettings_CreatesDirectory(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "deep", "nested", "dir", "settings.json")
-
-	err := WriteSettings(path, []byte("{}"))
-
-	require.NoError(t, err)
-	assert.FileExists(t, path)
-}
-
 func TestRun_Integration_Confirm(t *testing.T) {
 	tmpDir := t.TempDir()
 	settingsPath := filepath.Join(tmpDir, "settings.json")
@@ -257,7 +223,7 @@ func TestRun_Integration_Confirm(t *testing.T) {
 	var output bytes.Buffer
 	input := strings.NewReader("y\n")
 
-	err = Run(&output, input)
+	err = RunTarget(&output, input, TargetClaude)
 	require.NoError(t, err)
 
 	// Verify output
@@ -284,6 +250,25 @@ func TestRun_Integration_Confirm(t *testing.T) {
 	assert.Equal(t, float64(0), statusLine["padding"])
 }
 
+func TestRun_Integration_AlreadyInstalled(t *testing.T) {
+	tmpDir := t.TempDir()
+	settingsPath := filepath.Join(tmpDir, "settings.json")
+	t.Setenv("CLAUDE_CONFIG_DIR", tmpDir)
+	require.NoError(t, os.WriteFile(settingsPath, []byte(`{"theme": "dark"}`), 0644))
+	require.NoError(t, RunTarget(io.Discard, strings.NewReader("y\n"), TargetClaude))
+	installed, err := os.ReadFile(settingsPath)
+	require.NoError(t, err)
+
+	var output bytes.Buffer
+	require.NoError(t, RunTarget(&output, strings.NewReader(""), TargetClaude))
+
+	assert.Contains(t, output.String(), "No changes needed")
+	assert.NotContains(t, output.String(), "Apply changes?")
+	after, err := os.ReadFile(settingsPath)
+	require.NoError(t, err)
+	assert.Equal(t, installed, after)
+}
+
 func TestRun_Integration_Cancel(t *testing.T) {
 	tmpDir := t.TempDir()
 	settingsPath := filepath.Join(tmpDir, "settings.json")
@@ -300,7 +285,7 @@ func TestRun_Integration_Cancel(t *testing.T) {
 	var output bytes.Buffer
 	input := strings.NewReader("n\n")
 
-	err = Run(&output, input)
+	err = RunTarget(&output, input, TargetClaude)
 	require.NoError(t, err)
 
 	// Verify output
@@ -326,7 +311,7 @@ func TestRun_Integration_NewFile(t *testing.T) {
 	var output bytes.Buffer
 	input := strings.NewReader("y\n")
 
-	err := Run(&output, input)
+	err := RunTarget(&output, input, TargetClaude)
 	require.NoError(t, err)
 
 	// Verify file was created

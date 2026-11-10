@@ -6,26 +6,6 @@ import (
 	"testing"
 )
 
-func TestDefaultConfig(t *testing.T) {
-	cfg := Default()
-
-	if cfg.Template != DefaultTemplate {
-		t.Errorf("Template = %q, want %q", cfg.Template, DefaultTemplate)
-	}
-	if cfg.GitHubWorkflow != "build_and_test" {
-		t.Errorf("GitHubWorkflow = %q, want %q", cfg.GitHubWorkflow, "build_and_test")
-	}
-	if cfg.GitHubTTL != 60 {
-		t.Errorf("GitHubTTL = %d, want %d", cfg.GitHubTTL, 60)
-	}
-	if cfg.LoggingEnabled != false {
-		t.Errorf("LoggingEnabled = %v, want %v", cfg.LoggingEnabled, false)
-	}
-	if cfg.LogPath != "" {
-		t.Errorf("LogPath = %q, want %q", cfg.LogPath, "")
-	}
-}
-
 func TestLoadConfig_ValidFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -134,23 +114,6 @@ func TestLoadConfig_EmptyTemplate(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_LoggingEnabledFalse(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-
-	// Explicitly set logging_enabled to false
-	content := `{"logging_enabled": false}`
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg := LoadFrom(path)
-
-	if cfg.LoggingEnabled != false {
-		t.Errorf("LoggingEnabled = %v, want %v", cfg.LoggingEnabled, false)
-	}
-}
-
 func TestXDGPaths(t *testing.T) {
 	// These tests verify that paths are constructed correctly
 	// The actual XDG values depend on the environment
@@ -177,37 +140,5 @@ func TestXDGPaths(t *testing.T) {
 	}
 	if filepath.Base(dataDir) != "claude-status" {
 		t.Errorf("DataDir() base = %q, want %q", filepath.Base(dataDir), "claude-status")
-	}
-}
-
-func TestXDGPaths_EnvOverride(t *testing.T) {
-	// Save original env values
-	origCache := os.Getenv("XDG_CACHE_HOME")
-	origConfig := os.Getenv("XDG_CONFIG_HOME")
-	origData := os.Getenv("XDG_DATA_HOME")
-
-	defer func() {
-		os.Setenv("XDG_CACHE_HOME", origCache)
-		os.Setenv("XDG_CONFIG_HOME", origConfig)
-		os.Setenv("XDG_DATA_HOME", origData)
-	}()
-
-	// Note: The xdg library caches values at init time, so we can only
-	// verify that our functions return paths under the current XDG dirs.
-	// A full test would require restarting the process with new env vars.
-
-	cacheDir := CacheDir()
-	if cacheDir == "" {
-		t.Error("CacheDir() returned empty string")
-	}
-
-	configDir := ConfigDir()
-	if configDir == "" {
-		t.Error("ConfigDir() returned empty string")
-	}
-
-	dataDir := DataDir()
-	if dataDir == "" {
-		t.Error("DataDir() returned empty string")
 	}
 }

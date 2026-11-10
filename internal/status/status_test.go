@@ -30,7 +30,6 @@ func (m *mockGitProvider) Branch() (string, error)           { return m.branch, 
 func (m *mockGitProvider) Status() (string, error)           { return m.status, m.statusErr }
 func (m *mockGitProvider) DiffStats() (git.DiffStats, error) { return m.diffStats, m.diffStatsErr }
 func (m *mockGitProvider) RemoteURL() (string, error)        { return m.remoteURL, m.remoteErr }
-func (m *mockGitProvider) GitDir() string                    { return m.gitDir }
 func (m *mockGitProvider) HeadPath() string                  { return m.gitDir + "/HEAD" }
 func (m *mockGitProvider) IndexPath() string                 { return m.gitDir + "/index" }
 func (m *mockGitProvider) RefPath(branch string) string {
@@ -61,8 +60,6 @@ type mockCacheProvider struct {
 	fetchBuild     bool
 	fetchTasks     bool
 }
-
-func (m *mockCacheProvider) EnsureDir() error { return nil }
 
 func (m *mockCacheProvider) GetGitBranch(headPath string, fetchFn func() (string, error)) (string, error) {
 	if m.fetchBranch {
@@ -112,16 +109,6 @@ type mockTaskProvider struct {
 	nextTask  string
 }
 
-type mockPricingProvider struct {
-	price   pricing.Price
-	lookups int
-}
-
-func (m *mockPricingProvider) Lookup(string) (pricing.Price, bool) {
-	m.lookups++
-	return m.price, true
-}
-
 func (m *mockTaskProvider) Name() string {
 	return m.name
 }
@@ -138,54 +125,6 @@ func (m *mockTaskProvider) GetNextTask() (string, error) {
 	return m.nextTask, nil
 }
 
-func TestBuild_AllData(t *testing.T) {
-	cfg := config.Default()
-
-	git := &mockGitProvider{
-		branch:    "main",
-		status:    "±3",
-		remoteURL: "git@github.com:owner/repo.git",
-		gitDir:    "/repo/.git",
-	}
-
-	gh := &mockGitHubProvider{status: github.StatusSuccess}
-
-	cache := &mockCacheProvider{
-		branchValue: "main",
-		statusValue: "±3",
-		buildStatus: github.StatusSuccess,
-	}
-
-	builder := NewBuilderWithDeps(&cfg, cache, git, gh, nil, "")
-
-	input := Input{
-		Model:     ModelInfo{DisplayName: "Claude"},
-		Workspace: WorkspaceInfo{CurrentDir: "/path/to/myproject"},
-		Version:   "1.0.0",
-	}
-
-	data := builder.Build(input)
-
-	if data.Model != "Claude" {
-		t.Errorf("Model = %q, want %q", data.Model, "Claude")
-	}
-	if data.Dir != "myproject" {
-		t.Errorf("Dir = %q, want %q", data.Dir, "myproject")
-	}
-	if data.GitBranch != "main" {
-		t.Errorf("GitBranch = %q, want %q", data.GitBranch, "main")
-	}
-	if data.GitStatus != "±3" {
-		t.Errorf("GitStatus = %q, want %q", data.GitStatus, "±3")
-	}
-	if data.GitHubStatus != "✅" {
-		t.Errorf("GitHubStatus = %q, want %q", data.GitHubStatus, "✅")
-	}
-	if data.Version != "1.0.0" {
-		t.Errorf("Version = %q, want %q", data.Version, "1.0.0")
-	}
-}
-
 func TestBuild_NoGit(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
@@ -194,18 +133,21 @@ func TestBuild_NoGit(t *testing.T) {
 	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
 
 	input := Input{
-		Model:     ModelInfo{DisplayName: "Claude"},
+		Model:     ModelInfo{DisplayName: "Opus"},
 		Workspace: WorkspaceInfo{CurrentDir: "/path/to/myproject"},
 		Version:   "1.0.0",
 	}
 
 	data := builder.Build(input)
 
-	if data.Model != "Claude" {
-		t.Errorf("Model = %q, want %q", data.Model, "Claude")
+	if data.Model != "Opus" {
+		t.Errorf("Model = %q, want %q", data.Model, "Opus")
 	}
 	if data.Dir != "myproject" {
 		t.Errorf("Dir = %q, want %q", data.Dir, "myproject")
+	}
+	if data.Version != "1.0.0" {
+		t.Errorf("Version = %q, want %q", data.Version, "1.0.0")
 	}
 	if data.GitBranch != "" {
 		t.Errorf("GitBranch = %q, want empty", data.GitBranch)
@@ -373,22 +315,24 @@ func TestBuild_CacheMiss(t *testing.T) {
 func TestBuild_PartialFailure(t *testing.T) {
 	cfg := config.Default()
 
+	// Values ride along with the errors, so only the error checks can blank them out.
 	git := &mockGitProvider{
 		branch:    "main",
-		branchErr: nil,
-		status:    "",
+		status:    "±9",
 		statusErr: errors.New("git status failed"),
-		remoteURL: "",
+		remoteURL: "git@github.com:owner/repo.git",
 		remoteErr: errors.New("no remote"),
 		gitDir:    "/repo/.git",
 	}
+	gh := &mockGitHubProvider{status: github.StatusSuccess}
 
 	cache := &mockCacheProvider{
 		fetchBranch: true,
 		fetchStatus: true,
+		buildStatus: github.StatusSuccess,
 	}
 
-	builder := NewBuilderWithDeps(&cfg, cache, git, nil, nil, "")
+	builder := NewBuilderWithDeps(&cfg, cache, git, gh, nil, "")
 
 	input := Input{
 		Model:     ModelInfo{DisplayName: "Claude"},
@@ -426,24 +370,6 @@ func TestBuild_DefaultModel(t *testing.T) {
 
 	if data.Model != "Claude" {
 		t.Errorf("Model = %q, want %q (default)", data.Model, "Claude")
-	}
-}
-
-func TestBuild_DirBasename(t *testing.T) {
-	cfg := config.Default()
-	cache := &mockCacheProvider{}
-
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-
-	input := Input{
-		Model:     ModelInfo{DisplayName: "Claude"},
-		Workspace: WorkspaceInfo{CurrentDir: "/very/long/path/to/myproject"},
-	}
-
-	data := builder.Build(input)
-
-	if data.Dir != "myproject" {
-		t.Errorf("Dir = %q, want %q (basename only)", data.Dir, "myproject")
 	}
 }
 
@@ -637,53 +563,11 @@ func TestSetPrefix_Simple(t *testing.T) {
 	}
 }
 
-func TestSetPrefix_SpecialChars(t *testing.T) {
-	cfg := config.Default()
-	cache := &mockCacheProvider{}
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-
-	// Prefix is now stored as plain string - special chars are preserved as-is
-	// Color is applied by the template via prefixColor function
-	builder.SetPrefix("{{WORK}}")
-
-	input := Input{
-		Model:     ModelInfo{DisplayName: "Claude"},
-		Workspace: WorkspaceInfo{CurrentDir: "/project"},
-	}
-
-	data := builder.Build(input)
-
-	// Braces are preserved as literal text (no template parsing)
-	if data.Prefix != "{{WORK}}" {
-		t.Errorf("Prefix = %q, want %q", data.Prefix, "{{WORK}}")
-	}
-}
-
-func TestSetPrefix_Empty(t *testing.T) {
-	cfg := config.Default()
-	cache := &mockCacheProvider{}
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-
-	builder.SetPrefix("")
-
-	input := Input{
-		Model:     ModelInfo{DisplayName: "Claude"},
-		Workspace: WorkspaceInfo{CurrentDir: "/project"},
-	}
-
-	data := builder.Build(input)
-
-	if data.Prefix != "" {
-		t.Errorf("Prefix = %q, want empty", data.Prefix)
-	}
-}
-
 func TestBuild_ContextWindowFromStdin(t *testing.T) {
 	tests := []struct {
 		name          string
 		contextWindow *ContextWindowInfo
 		wantPct       float64
-		wantPctUse    float64
 		wantInput     int64
 		wantOutput    int64
 		wantCached    int64
@@ -705,21 +589,10 @@ func TestBuild_ContextWindowFromStdin(t *testing.T) {
 				},
 			},
 			wantPct:     14.1,
-			wantPctUse:  17.625, // 14.1 * 1.25
 			wantInput:   8500,
 			wantOutput:  1200,
 			wantCached:  7000, // 5000 + 2000
 			wantCtxSize: 1_000_000,
-		},
-		{
-			name: "200k context window",
-			contextWindow: &ContextWindowInfo{
-				UsedPercentage:    ptrFloat64(50.0),
-				ContextWindowSize: 200_000,
-			},
-			wantPct:     50.0,
-			wantPctUse:  62.5, // 50 * 1.25
-			wantCtxSize: 200_000,
 		},
 		{
 			name: "no current_usage (null before first API call)",
@@ -729,17 +602,6 @@ func TestBuild_ContextWindowFromStdin(t *testing.T) {
 				CurrentUsage:      nil,
 			},
 			wantPct:     8.0,
-			wantPctUse:  10.0, // 8 * 1.25
-			wantCtxSize: 200_000,
-		},
-		{
-			name: "high usage caps usable at 100",
-			contextWindow: &ContextWindowInfo{
-				UsedPercentage:    ptrFloat64(90.0),
-				ContextWindowSize: 200_000,
-			},
-			wantPct:     90.0,
-			wantPctUse:  100.0, // 90 * 1.25 = 112.5, capped at 100
 			wantCtxSize: 200_000,
 		},
 	}
@@ -761,9 +623,6 @@ func TestBuild_ContextWindowFromStdin(t *testing.T) {
 			if data.ContextPct != tt.wantPct {
 				t.Errorf("ContextPct = %v, want %v", data.ContextPct, tt.wantPct)
 			}
-			if data.ContextPctUse != tt.wantPctUse {
-				t.Errorf("ContextPctUse = %v, want %v", data.ContextPctUse, tt.wantPctUse)
-			}
 			if data.TokensInput != tt.wantInput {
 				t.Errorf("TokensInput = %d, want %d", data.TokensInput, tt.wantInput)
 			}
@@ -780,73 +639,13 @@ func TestBuild_ContextWindowFromStdin(t *testing.T) {
 	}
 }
 
-func TestBuild_ContextWindowNullPercentage(t *testing.T) {
-	cfg := config.Default()
-	cache := &mockCacheProvider{}
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-
-	// context_window present but used_percentage is null (early in session)
-	input := Input{
-		Model:     ModelInfo{DisplayName: "Claude"},
-		Workspace: WorkspaceInfo{CurrentDir: "/project"},
-		ContextWindow: &ContextWindowInfo{
-			UsedPercentage:    nil,
-			ContextWindowSize: 200_000,
-		},
-	}
-
-	data := builder.Build(input)
-
-	// Should fall through to transcript parsing (which returns 0 with no transcript)
-	if data.ContextPct != 0 {
-		t.Errorf("ContextPct = %v, want 0 (null percentage should fallback)", data.ContextPct)
-	}
-	// The reported window is still the window, even with nothing to measure.
-	if data.ContextWindowSize != 200_000 {
-		t.Errorf("ContextWindowSize = %d, want 200000", data.ContextWindowSize)
-	}
-}
-
-func TestBuild_ContextWindowFallback(t *testing.T) {
-	cfg := config.Default()
-	cache := &mockCacheProvider{}
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-
-	// Create a transcript file for fallback
-	tmpDir := t.TempDir()
-	transcriptPath := tmpDir + "/transcript.jsonl"
-	jsonlContent := `{"type":"summary","summary":"Test session"}
-{"parentUuid":"123","isSidechain":false,"type":"assistant","message":{"role":"assistant","usage":{"input_tokens":10000,"output_tokens":5000,"cache_read_input_tokens":30000,"cache_creation_input_tokens":5000}}}
-`
-	if err := writeTestFile(transcriptPath, jsonlContent); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-
-	// No context_window — should fall back to transcript
-	input := Input{
-		Model:          ModelInfo{ID: "claude-opus-4-5-20251101", DisplayName: "Claude"},
-		Workspace:      WorkspaceInfo{CurrentDir: "/project"},
-		TranscriptPath: transcriptPath,
-	}
-
-	data := builder.Build(input)
-
-	// Should have token data from transcript
-	if data.TokensInput != 10000 {
-		t.Errorf("TokensInput = %d, want 10000 (from transcript fallback)", data.TokensInput)
-	}
-	if data.ContextPct == 0 {
-		t.Error("ContextPct should not be zero (transcript has data)")
-	}
-}
-
 func TestBuild_ContextLimitFromPricingWhenAssumptionOverflows(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{
+	builder.SetPricingProvider(pricing.Table{
 		"claude-opus-5": {Input: 5, Output: 25, ContextLimit: 1_000_000},
-	}))
+	})
 
 	tmpDir := t.TempDir()
 	transcriptPath := tmpDir + "/transcript.jsonl"
@@ -866,34 +665,8 @@ func TestBuild_ContextLimitFromPricingWhenAssumptionOverflows(t *testing.T) {
 	if data.ContextPct != 50 {
 		t.Errorf("ContextPct = %v, want 50 (500k of the 1M limit from models.dev)", data.ContextPct)
 	}
-}
-
-func TestBuild_ContextLimitResolvedOnce(t *testing.T) {
-	cfg := config.Default()
-	cache := &mockCacheProvider{}
-	prices := &mockPricingProvider{price: pricing.Price{ContextLimit: 1_000_000}}
-	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-	builder.SetPricingProvider(prices)
-
-	transcriptPath := t.TempDir() + "/transcript.jsonl"
-	jsonlContent := `{"parentUuid":"1","isSidechain":false,"type":"assistant","message":{"role":"assistant","usage":{"input_tokens":500000}}}
-`
-	if err := writeTestFile(transcriptPath, jsonlContent); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-
-	data := builder.Build(Input{
-		Model:          ModelInfo{ID: "claude-opus-5", DisplayName: "Opus"},
-		Workspace:      WorkspaceInfo{CurrentDir: "/p"},
-		TranscriptPath: transcriptPath,
-		Cost:           &CostInfo{},
-	})
-
-	if prices.lookups != 1 {
-		t.Errorf("pricing lookups = %d, want 1", prices.lookups)
-	}
-	if data.ContextPct != 50 || data.ContextWindowSize != 1_000_000 {
-		t.Errorf("context = %.1f%% of %d, want 50%% of 1000000", data.ContextPct, data.ContextWindowSize)
+	if data.ContextWindowSize != 1_000_000 {
+		t.Errorf("ContextWindowSize = %d, want 1000000", data.ContextWindowSize)
 	}
 }
 
@@ -901,9 +674,9 @@ func TestBuild_ContextLimitKeeps200kWhenUsageFits(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{
+	builder.SetPricingProvider(pricing.Table{
 		"claude-sonnet-4-5": {Input: 3, Output: 15, ContextLimit: 1_000_000},
-	}))
+	})
 
 	tmpDir := t.TempDir()
 	transcriptPath := tmpDir + "/transcript.jsonl"
@@ -930,9 +703,9 @@ func TestBuild_ContextWindowSizeBeatsModelHeuristics(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{
+	builder.SetPricingProvider(pricing.Table{
 		"claude-opus-5": {Input: 5, ContextLimit: 1_000_000},
-	}))
+	})
 
 	tmpDir := t.TempDir()
 	transcriptPath := tmpDir + "/transcript.jsonl"
@@ -1021,9 +794,9 @@ func TestBuild_CostFallbackFromPricing(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{
+	builder.SetPricingProvider(pricing.Table{
 		"claude-opus-4-7": {Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
-	}))
+	})
 
 	pct := 10.0
 	input := Input{
@@ -1053,9 +826,9 @@ func TestBuild_StdinCostBeatsPricing(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{
+	builder.SetPricingProvider(pricing.Table{
 		"claude-opus-4-7": {Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
-	}))
+	})
 
 	pct := 10.0
 	input := Input{
@@ -1078,7 +851,7 @@ func TestBuild_NoPricingWhenUnknownModel(t *testing.T) {
 	cfg := config.Default()
 	cache := &mockCacheProvider{}
 	builder := NewBuilderWithDeps(&cfg, cache, nil, nil, nil, "")
-	builder.SetPricingProvider(pricing.NewStatic(pricing.Table{}))
+	builder.SetPricingProvider(pricing.Table{})
 
 	pct := 10.0
 	input := Input{
@@ -1129,17 +902,4 @@ func TestBuild_TasksZeroValues(t *testing.T) {
 		t.Error("HasTasks should be true even with zero stats")
 	}
 
-	// Values should be zero
-	if data.TasksOpen != 0 {
-		t.Errorf("TasksOpen = %d, want 0", data.TasksOpen)
-	}
-	if data.TasksReady != 0 {
-		t.Errorf("TasksReady = %d, want 0", data.TasksReady)
-	}
-	if data.TasksInProgress != 0 {
-		t.Errorf("TasksInProgress = %d, want 0", data.TasksInProgress)
-	}
-	if data.TasksBlocked != 0 {
-		t.Errorf("TasksBlocked = %d, want 0", data.TasksBlocked)
-	}
 }

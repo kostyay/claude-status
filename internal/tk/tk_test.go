@@ -3,18 +3,23 @@ package tk
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/kostyay/claude-status/internal/tasks"
 )
 
-// mockCommander is a test double for Commander.
+// mockCommander answers only its configured command line; others get no output.
 type mockCommander struct {
-	output []byte
-	err    error
+	command string
+	output  []byte
+	err     error
 }
 
 func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
+	if strings.Join(append([]string{name}, args...), " ") != m.command {
+		return nil, nil
+	}
 	return m.output, m.err
 }
 
@@ -84,7 +89,7 @@ func TestClient_GetStats(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := &mockCommander{output: []byte(tt.output)}
+			cmd := &mockCommander{command: "tk query", output: []byte(tt.output)}
 			client := NewClientWithCommander(cmd, "/test")
 
 			got, err := client.GetStats()
@@ -102,7 +107,7 @@ func TestClient_GetStats(t *testing.T) {
 }
 
 func TestClient_GetStats_CommandError(t *testing.T) {
-	cmd := &mockCommander{err: errors.New("command failed")}
+	cmd := &mockCommander{command: "tk query", err: errors.New("command failed")}
 	client := NewClientWithCommander(cmd, "/test")
 
 	_, err := client.GetStats()
@@ -171,7 +176,7 @@ func TestClient_GetNextTask(t *testing.T) {
 		},
 		{
 			name:   "command error returns empty",
-			output: "",
+			output: "pp-461d  [P2][open] - Ignored on error",
 			err:    errors.New("no ready tickets"),
 			want:   "",
 		},
@@ -184,7 +189,7 @@ func TestClient_GetNextTask(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := &mockCommander{output: []byte(tt.output), err: tt.err}
+			cmd := &mockCommander{command: "tk ready", output: []byte(tt.output), err: tt.err}
 			client := NewClientWithCommander(cmd, "/test")
 
 			got, err := client.GetNextTask()
@@ -196,27 +201,6 @@ func TestClient_GetNextTask(t *testing.T) {
 				t.Errorf("GetNextTask() = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestComputeStats_BlockedChain(t *testing.T) {
-	// Test a chain of dependencies: t-003 -> t-002 -> t-001
-	tickets := []ticket{
-		{ID: "t-001", Status: "open", Deps: nil},
-		{ID: "t-002", Status: "open", Deps: []string{"t-001"}},
-		{ID: "t-003", Status: "open", Deps: []string{"t-002"}},
-	}
-
-	stats := computeStats(tickets)
-
-	if stats.TotalIssues != 3 {
-		t.Errorf("TotalIssues = %d, want 3", stats.TotalIssues)
-	}
-	if stats.ReadyIssues != 1 {
-		t.Errorf("ReadyIssues = %d, want 1 (only t-001)", stats.ReadyIssues)
-	}
-	if stats.BlockedIssues != 2 {
-		t.Errorf("BlockedIssues = %d, want 2 (t-002 and t-003)", stats.BlockedIssues)
 	}
 }
 

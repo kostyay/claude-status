@@ -34,6 +34,7 @@ type Input struct {
 	ContextWindow     *ContextWindowInfo `json:"context_window"`
 	Cost              *CostInfo          `json:"cost"`
 	Exceeds200kTokens bool               `json:"exceeds_200k_tokens"`
+	FastMode          bool               `json:"fast_mode"`
 	OutputStyle       *OutputStyleInfo   `json:"output_style"`
 	Effort            *EffortInfo        `json:"effort"`
 	Thinking          *ThinkingInfo      `json:"thinking"`
@@ -108,6 +109,7 @@ type PRInfo struct {
 	Number      int    `json:"number"`
 	URL         string `json:"url"`
 	ReviewState string `json:"review_state"`
+	Kind        string `json:"kind"`
 }
 
 // WorktreeInfo contains --worktree session metadata.
@@ -152,7 +154,6 @@ type GitProvider interface {
 	Status() (string, error)
 	DiffStats() (git.DiffStats, error)
 	RemoteURL() (string, error)
-	GitDir() string
 	HeadPath() string
 	IndexPath() string
 	RefPath(branch string) string
@@ -171,7 +172,6 @@ type CacheProvider interface {
 	GetGitHubBuild(refPath, branch string, ttl time.Duration, fetchFn func() (github.BuildStatus, error)) (github.BuildStatus, error)
 	GetTaskStats(workDir string, ttl time.Duration, fetchFn func() (tasks.Stats, error)) (tasks.Stats, error)
 	GetNextTask(workDir string, ttl time.Duration, fetchFn func() (string, error)) (string, error)
-	EnsureDir() error
 }
 
 // Builder constructs StatusData from various sources.
@@ -311,6 +311,7 @@ func populateFromInput(data *template.StatusData, input Input) {
 	}
 	data.SessionName = input.SessionName
 	data.Exceeds200kTokens = input.Exceeds200kTokens
+	data.FastMode = input.FastMode
 	if input.OutputStyle != nil {
 		data.OutputStyle = input.OutputStyle.Name
 	}
@@ -340,6 +341,7 @@ func populateFromInput(data *template.StatusData, input Input) {
 		data.PRNumber = pr.Number
 		data.PRURL = pr.URL
 		data.PRReviewState = pr.ReviewState
+		data.PRKind = pr.Kind
 	}
 	if wt := input.Worktree; wt != nil {
 		data.WorktreeName = wt.Name
@@ -356,7 +358,7 @@ func (b *Builder) populateTokenMetrics(data *template.StatusData, input Input) t
 	// Prefer context_window data from Claude Code stdin, else parse the transcript.
 	if input.ContextWindow != nil && input.ContextWindow.UsedPercentage != nil {
 		m := b.populateFromContextWindow(data, input)
-		data.ContextWindowSize = b.contextConfig(input, m.ContextLength).MaxTokens
+		data.ContextWindowSize = b.contextWindow(input, m.ContextLength)
 		return m
 	}
 	return b.populateFromTranscript(data, input)
@@ -367,9 +369,6 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 	cw := input.ContextWindow
 
 	data.ContextPct = *cw.UsedPercentage
-
-	// Scale to usable context (auto-compact threshold)
-	data.ContextPctUse = min(*cw.UsedPercentage/tokens.AutoCompactThreshold, 100)
 
 	var m tokens.Metrics
 	// Populate token metrics from current_usage if available
@@ -388,45 +387,38 @@ func (b *Builder) populateFromContextWindow(data *template.StatusData, input Inp
 		m.ContextLength = data.ContextLength
 	}
 
-	// Use cumulative totals for total tokens (session-cumulative, not per-call)
 	data.TokensTotal = cw.TotalInputTokens + cw.TotalOutputTokens
 	m.TotalTokens = m.InputTokens + m.OutputTokens + m.CachedTokens
 	return m
 }
 
-// contextConfig resolves the session's context window, most authoritative first:
+// contextWindow resolves the session's context window, most authoritative first:
 // the size Claude Code reports, then the "[1m]" model-ID suffix. Older Claude Code
 // supplies neither, so as a last resort trust models.dev's limit — but only once
 // observed usage proves the assumed window too small, since models.dev reports
 // what a model supports, not how this session was configured.
-func (b *Builder) contextConfig(input Input, contextLength int64) tokens.ContextConfig {
+func (b *Builder) contextWindow(input Input, contextLength int64) int64 {
 	if cw := input.ContextWindow; cw != nil && cw.ContextWindowSize > 0 {
-		return tokens.NewContextConfig(cw.ContextWindowSize)
+		return cw.ContextWindowSize
 	}
-	cfg := tokens.GetContextConfig(input.Model.ID)
-	if contextLength <= cfg.MaxTokens || b.pricing == nil {
-		return cfg
+	window := tokens.ContextWindow(input.Model.ID)
+	if contextLength <= window || b.pricing == nil {
+		return window
 	}
-	if p, ok := b.pricing.Lookup(input.Model.ID); ok && p.ContextLimit > cfg.MaxTokens {
-		return tokens.NewContextConfig(p.ContextLimit)
+	if p, ok := b.pricing.Lookup(input.Model.ID); ok && p.ContextLimit > window {
+		return p.ContextLimit
 	}
-	return cfg
+	return window
 }
 
 // populateFromTranscript parses the transcript JSONL file for token metrics.
 func (b *Builder) populateFromTranscript(data *template.StatusData, input Input) tokens.Metrics {
-	var metrics tokens.Metrics
-	if input.TranscriptPath != "" {
-		var err error
-		metrics, err = tokens.ParseTranscript(input.TranscriptPath)
-		if err != nil {
-			slog.Debug("failed to parse transcript", "path", input.TranscriptPath, "err", err)
-			metrics = tokens.Metrics{}
-		}
+	metrics, err := tokens.ParseTranscript(input.TranscriptPath)
+	if err != nil {
+		slog.Debug("failed to parse transcript", "path", input.TranscriptPath, "err", err)
 	}
 
-	ctxCfg := b.contextConfig(input, metrics.ContextLength)
-	data.ContextWindowSize = ctxCfg.MaxTokens
+	data.ContextWindowSize = b.contextWindow(input, metrics.ContextLength)
 
 	// Populate raw values (formatting is done in templates via fmtTokens/fmtPct)
 	data.TokensInput = metrics.InputTokens
@@ -434,8 +426,7 @@ func (b *Builder) populateFromTranscript(data *template.StatusData, input Input)
 	data.TokensCached = metrics.CachedTokens
 	data.TokensTotal = metrics.TotalTokens
 	data.ContextLength = metrics.ContextLength
-	data.ContextPct = metrics.ContextPercentage(ctxCfg)
-	data.ContextPctUse = metrics.ContextPercentageUsable(ctxCfg)
+	data.ContextPct = metrics.ContextPercentage(data.ContextWindowSize)
 	return metrics
 }
 
@@ -488,11 +479,6 @@ func (b *Builder) fetchGitHubStatus(data *template.StatusData, branch string) {
 	}
 
 	data.GitHubStatus = github.StatusToEmoji(buildStatus)
-}
-
-// SetGitHubClient sets the GitHub client (for lazy initialization or testing).
-func (b *Builder) SetGitHubClient(gh GitHubProvider) {
-	b.gh = gh
 }
 
 // SetPricingProvider overrides the pricing provider used for cost fallback.

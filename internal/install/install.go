@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/pmezard/go-difflib/difflib"
@@ -42,11 +43,6 @@ type StatusLine struct {
 	Type    string `json:"type"`
 	Command string `json:"command"`
 	Padding int    `json:"padding"`
-}
-
-// Run executes the original Claude Code install flow.
-func Run(w io.Writer, r io.Reader) error {
-	return RunTarget(w, r, TargetClaude)
 }
 
 // RunTarget executes the install flow for the selected application.
@@ -102,7 +98,11 @@ func runClaude(w io.Writer, r io.Reader) error {
 	afterSettings := beforeSettings
 
 	// Show diff
-	ShowDiff(w, settingsPath, beforeCopy, afterSettings)
+	afterCopy := deepCopySettings(afterSettings) // StatusLine struct -> plain map, like beforeCopy
+	ShowDiff(w, settingsPath, beforeCopy, afterCopy)
+	if reflect.DeepEqual(beforeCopy, afterCopy) {
+		return nil
+	}
 
 	// Prompt for confirmation
 	if !PromptConfirm(w, r) {

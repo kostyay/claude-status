@@ -3,7 +3,6 @@ package tokens
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 )
@@ -18,11 +17,6 @@ type Metrics struct {
 	TotalTokens         int64 // Sum of all tokens
 	ContextLength       int64 // Current context window size (last message's input + cache)
 }
-
-// AutoCompactThreshold is the fraction of the context window at which Claude Code
-// triggers auto-compaction. Used to derive UsableTokens and to scale used_percentage
-// from the stdin context_window data.
-const AutoCompactThreshold = 0.8
 
 // suffix1M is the Claude Code marker on model IDs that signals 1M-token context mode.
 const suffix1M = "[1m]"
@@ -41,40 +35,24 @@ func NormalizeModelID(modelID string) string {
 	return modelID
 }
 
-// ContextConfig holds model-specific context limits.
-type ContextConfig struct {
-	MaxTokens    int64 // Maximum context window (1M for Opus 4.6/Sonnet 4.5/Sonnet 4 [1m], 200k otherwise)
-	UsableTokens int64 // Usable context before auto-compact (AutoCompactThreshold of max)
-}
-
-// GetContextConfig infers context limits from a model ID, for when Claude Code
-// does not report the session's window size. Models carrying the "[1m]" suffix
-// get 1M, all others 200k.
-func GetContextConfig(modelID string) ContextConfig {
+// ContextWindow infers the context window size from a model ID, for when Claude Code
+// does not report it. Models carrying the "[1m]" suffix get 1M, all others 200k,
+// matching what Claude Code assumes for model IDs it doesn't recognize.
+func ContextWindow(modelID string) int64 {
 	if Has1MContext(modelID) {
-		return NewContextConfig(1_000_000)
+		return 1_000_000
 	}
-	return NewContextConfig(200_000)
-}
-
-// NewContextConfig derives the usable-token threshold from a context window size.
-func NewContextConfig(maxTokens int64) ContextConfig {
-	return ContextConfig{
-		MaxTokens:    maxTokens,
-		UsableTokens: int64(float64(maxTokens) * AutoCompactThreshold),
-	}
+	return 200_000
 }
 
 // transcriptLine represents a single line in the JSONL transcript.
 type transcriptLine struct {
-	Type        string   `json:"type"`
 	IsSidechain bool     `json:"isSidechain"`
 	Message     *message `json:"message"`
 }
 
 // message represents the message field in a transcript line.
 type message struct {
-	Role  string `json:"role"`
 	Usage *usage `json:"usage"`
 }
 
@@ -87,7 +65,7 @@ type usage struct {
 }
 
 // ParseTranscript reads a JSONL transcript file and calculates token metrics.
-// It skips sidechain messages (agent messages) and non-assistant messages.
+// It skips sidechain (agent) messages and lines without usage data.
 func ParseTranscript(path string) (Metrics, error) {
 	if path == "" {
 		return Metrics{}, nil
@@ -146,47 +124,10 @@ func ParseTranscript(path string) (Metrics, error) {
 	return m, nil
 }
 
-// ContextPercentage calculates the percentage of max context used.
-func (m Metrics) ContextPercentage(cfg ContextConfig) float64 {
-	if cfg.MaxTokens == 0 {
+// ContextPercentage calculates the percentage of the context window used.
+func (m Metrics) ContextPercentage(maxTokens int64) float64 {
+	if maxTokens == 0 {
 		return 0
 	}
-	pct := float64(m.ContextLength) / float64(cfg.MaxTokens) * 100
-	if pct > 100 {
-		return 100
-	}
-	return pct
-}
-
-// ContextPercentageUsable calculates the percentage of usable context used.
-// This accounts for the 80% auto-compact threshold.
-func (m Metrics) ContextPercentageUsable(cfg ContextConfig) float64 {
-	if cfg.UsableTokens == 0 {
-		return 0
-	}
-	pct := float64(m.ContextLength) / float64(cfg.UsableTokens) * 100
-	if pct > 100 {
-		return 100
-	}
-	return pct
-}
-
-// FormatTokens formats a token count in a human-readable way.
-// e.g., 1234 -> "1.2k", 1234567 -> "1.2M"
-func FormatTokens(count int64) string {
-	if count >= 1_000_000 {
-		return formatWithSuffix(float64(count)/1_000_000, "M")
-	}
-	if count >= 1_000 {
-		return formatWithSuffix(float64(count)/1_000, "k")
-	}
-	return fmt.Sprintf("%d", count)
-}
-
-func formatWithSuffix(f float64, suffix string) string {
-	// Format with one decimal place
-	s := fmt.Sprintf("%.1f", f)
-	// Remove trailing .0
-	s = strings.TrimSuffix(s, ".0")
-	return s + suffix
+	return min(float64(m.ContextLength)/float64(maxTokens)*100, 100)
 }

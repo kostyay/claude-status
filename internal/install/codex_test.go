@@ -50,17 +50,8 @@ func TestGetCodexConfigPath(t *testing.T) {
 }
 
 func TestUpdateCodexConfig_NewFile(t *testing.T) {
-	updated := UpdateCodexConfig("")
+	updated := mustUpdateCodexConfig(t, "")
 
-	assert.Equal(t, []string{
-		"model-with-reasoning",
-		"run-state",
-		"context-used",
-		"five-hour-limit",
-		"weekly-limit",
-		"git-branch",
-		"project-name",
-	}, codexStatusLineItems)
 	assert.True(t, strings.HasPrefix(updated, "[tui]\nstatus_line = [\n"))
 	for _, item := range codexStatusLineItems {
 		assert.Contains(t, updated, `"`+item+`"`)
@@ -70,7 +61,7 @@ func TestUpdateCodexConfig_NewFile(t *testing.T) {
 
 func TestUpdateCodexConfig_AddsTUISection(t *testing.T) {
 	before := "# keep this comment\nmodel = \"gpt-5\"\n"
-	updated := UpdateCodexConfig(before)
+	updated := mustUpdateCodexConfig(t, before)
 
 	assert.Contains(t, updated, before)
 	assert.Contains(t, updated, "\n[tui]\nstatus_line = [")
@@ -78,7 +69,7 @@ func TestUpdateCodexConfig_AddsTUISection(t *testing.T) {
 
 func TestUpdateCodexConfig_PreservesExistingTUISettings(t *testing.T) {
 	before := "[tui]\nanimations = false\n\n[features]\nhooks = true\n"
-	updated := UpdateCodexConfig(before)
+	updated := mustUpdateCodexConfig(t, before)
 
 	assert.Contains(t, updated, "[tui]\nstatus_line = [")
 	assert.Contains(t, updated, "animations = false")
@@ -87,7 +78,7 @@ func TestUpdateCodexConfig_PreservesExistingTUISettings(t *testing.T) {
 
 func TestUpdateCodexConfig_ReplacesMultilineStatusLine(t *testing.T) {
 	before := "[tui] # existing\nstatus_line = [\n  \"model\",\n  \"git-branch\",\n]\nshow_tooltips = false\n"
-	updated := UpdateCodexConfig(before)
+	updated := mustUpdateCodexConfig(t, before)
 
 	assert.NotContains(t, updated, "  \"model\",\n")
 	assert.Contains(t, updated, "  \"model-with-reasoning\",")
@@ -97,7 +88,7 @@ func TestUpdateCodexConfig_ReplacesMultilineStatusLine(t *testing.T) {
 
 func TestUpdateCodexConfig_IgnoresBracketsInsideStrings(t *testing.T) {
 	before := "[tui]\nstatus_line = [\"custom[segment\"]\nshow_tooltips = false\n"
-	updated := UpdateCodexConfig(before)
+	updated := mustUpdateCodexConfig(t, before)
 
 	assert.Contains(t, updated, "show_tooltips = false")
 	assert.Contains(t, updated, "  \"model-with-reasoning\",")
@@ -105,14 +96,43 @@ func TestUpdateCodexConfig_IgnoresBracketsInsideStrings(t *testing.T) {
 
 func TestUpdateCodexConfig_PreservesTrailingComment(t *testing.T) {
 	before := "[tui]\nstatus_line = [\"model\"] # custom layout\n"
-	updated := UpdateCodexConfig(before)
+	updated := mustUpdateCodexConfig(t, before)
 
 	assert.Contains(t, updated, "] # custom layout\n")
 }
 
+func TestUpdateCodexConfig_ReplacesDottedStatusLine(t *testing.T) {
+	before := "model = \"gpt-5\"\n" +
+		"tui.status_line = [\n  \"model\",\n] # mine\n\n" +
+		"[features]\nhooks = true\n"
+	updated := mustUpdateCodexConfig(t, before)
+
+	assert.NotContains(t, updated, "[tui]")
+	assert.Contains(t, updated, "tui.status_line = [\n  \"model-with-reasoning\",")
+	assert.Contains(t, updated, "] # mine\n")
+	assert.Equal(t, 1, strings.Count(updated, "status_line ="))
+	assert.Contains(t, updated, "[features]\nhooks = true")
+}
+
+func TestUpdateCodexConfig_AddsBesideDottedTUIKeys(t *testing.T) {
+	before := "tui.animations = false\n\n[features]\nhooks = true\n"
+	updated := mustUpdateCodexConfig(t, before)
+
+	assert.NotContains(t, updated, "[tui]")
+	assert.Contains(t, updated, "tui.animations = false")
+	statusLineAt := strings.Index(updated, "tui.status_line = [")
+	assert.Less(t, statusLineAt, strings.Index(updated, "[features]"))
+}
+
+func TestUpdateCodexConfig_RejectsInlineTUITable(t *testing.T) {
+	_, err := UpdateCodexConfig("tui = { animations = false }\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "inline table")
+}
+
 func TestUpdateCodexConfig_DoesNotReplaceSimilarKey(t *testing.T) {
 	before := "[tui]\nstatus_line_use_colors = true\n"
-	updated := UpdateCodexConfig(before)
+	updated := mustUpdateCodexConfig(t, before)
 
 	assert.Contains(t, updated, "status_line_use_colors = true")
 	assert.Equal(t, 1, strings.Count(updated, "status_line ="))
@@ -156,7 +176,7 @@ func TestRunCodex_NoChanges(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CODEX_HOME", dir)
 	configPath := filepath.Join(dir, "config.toml")
-	before := []byte(UpdateCodexConfig(""))
+	before := []byte(mustUpdateCodexConfig(t, ""))
 	require.NoError(t, os.WriteFile(configPath, before, 0644))
 
 	infoBefore, err := os.Stat(configPath)
@@ -173,4 +193,11 @@ func TestRunCodex_NoChanges(t *testing.T) {
 	assert.Equal(t, infoBefore.ModTime(), infoAfter.ModTime())
 	assert.NotContains(t, output.String(), "Apply changes?")
 	assert.Contains(t, output.String(), "already configured")
+}
+
+func mustUpdateCodexConfig(t *testing.T, content string) string {
+	t.Helper()
+	updated, err := UpdateCodexConfig(content)
+	require.NoError(t, err)
+	return updated
 }

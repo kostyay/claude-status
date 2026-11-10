@@ -21,6 +21,8 @@ var codexStatusLineItems = []string{
 	"five-hour-limit",
 	"weekly-limit",
 	"git-branch",
+	"pull-request-number",
+	"branch-changes",
 	"project-name",
 }
 
@@ -45,7 +47,11 @@ func runCodex(w io.Writer, r io.Reader) error {
 		return fmt.Errorf("failed to read Codex config: %w", err)
 	}
 
-	after := []byte(UpdateCodexConfig(string(before)))
+	updated, err := UpdateCodexConfig(string(before))
+	if err != nil {
+		return fmt.Errorf("failed to update %s: %w", configPath, err)
+	}
+	after := []byte(updated)
 	showTextDiff(w, configPath, before, after)
 	if bytes.Equal(before, after) {
 		fmt.Fprintln(w, "Codex status line is already configured.")
@@ -66,57 +72,66 @@ func runCodex(w io.Writer, r io.Reader) error {
 }
 
 // UpdateCodexConfig adds or replaces tui.status_line while preserving all
-// unrelated TOML text, including comments and formatting.
-func UpdateCodexConfig(content string) string {
+// unrelated TOML text, including comments and formatting. It writes into an
+// existing [tui] table, or beside root-level tui.* dotted keys, since adding a
+// [tui] header there would define the table twice.
+func UpdateCodexConfig(content string) (string, error) {
 	lines := strings.Split(content, "\n")
+	rootEnd := sectionEnd(lines, 0)
+	for i := rootEnd; i < len(lines); i++ {
+		if tomlHeader(lines[i]) == "tui" {
+			return upsertStatusLine(lines, i+1, sectionEnd(lines, i+1), "status_line"), nil
+		}
+	}
 
-	tuiStart := -1
-	tuiEnd := len(lines)
-	for i, line := range lines {
-		if tomlHeader(line) == "tui" {
-			tuiStart = i
-			for j := i + 1; j < len(lines); j++ {
-				if tomlHeader(lines[j]) != "" {
-					tuiEnd = j
-					break
-				}
-			}
+	for i := range rootEnd {
+		switch key := assignmentKey(lines[i]); {
+		case key == "tui":
+			return "", fmt.Errorf(
+				"tui is an inline table on line %d; add status_line to it manually", i+1)
+		case strings.HasPrefix(key, "tui."):
+			return upsertStatusLine(lines, i, rootEnd, "tui.status_line"), nil
+		}
+	}
+
+	trimmed := strings.TrimRight(content, "\r\n")
+	if trimmed != "" {
+		trimmed += "\n\n"
+	}
+	return trimmed + "[tui]\n" + codexStatusLineBlock("status_line", "") + "\n", nil
+}
+
+// upsertStatusLine replaces the key's assignment within lines[from:to], or inserts
+// it at from when absent.
+func upsertStatusLine(lines []string, from, to int, key string) string {
+	start, end, comment := from, from, "" // lines[start:end] is replaced; empty means insert
+	for i := from; i < to; i++ {
+		if assignmentKey(lines[i]) == key {
+			last := assignmentEnd(lines, i, to)
+			start, end, comment = i, last+1, trailingComment(lines[last])
 			break
 		}
 	}
-
-	if tuiStart == -1 {
-		trimmed := strings.TrimRight(content, "\r\n")
-		if trimmed != "" {
-			trimmed += "\n\n"
-		}
-		return trimmed + "[tui]\n" + codexStatusLineBlock("") + "\n"
-	}
-
-	for i := tuiStart + 1; i < tuiEnd; i++ {
-		if !isStatusLineAssignment(lines[i]) {
-			continue
-		}
-		end := assignmentEnd(lines, i, tuiEnd)
-		block := codexStatusLineBlock(trailingComment(lines[end]))
-		updated := make([]string, 0, len(lines)-(end-i)+len(strings.Split(block, "\n")))
-		updated = append(updated, lines[:i]...)
-		updated = append(updated, strings.Split(block, "\n")...)
-		updated = append(updated, lines[end+1:]...)
-		return strings.Join(updated, "\n")
-	}
-
-	block := codexStatusLineBlock("")
-	updated := make([]string, 0, len(lines)+len(codexStatusLineItems)+3)
-	updated = append(updated, lines[:tuiStart+1]...)
-	updated = append(updated, strings.Split(block, "\n")...)
-	updated = append(updated, lines[tuiStart+1:]...)
+	block := strings.Split(codexStatusLineBlock(key, comment), "\n")
+	updated := make([]string, 0, len(lines)+len(block))
+	updated = append(updated, lines[:start]...)
+	updated = append(updated, block...)
+	updated = append(updated, lines[end:]...)
 	return strings.Join(updated, "\n")
 }
 
-func codexStatusLineBlock(comment string) string {
+func sectionEnd(lines []string, from int) int {
+	for i := from; i < len(lines); i++ {
+		if tomlHeader(lines[i]) != "" {
+			return i
+		}
+	}
+	return len(lines)
+}
+
+func codexStatusLineBlock(key, comment string) string {
 	var b strings.Builder
-	b.WriteString("status_line = [\n")
+	b.WriteString(key + " = [\n")
 	for _, item := range codexStatusLineItems {
 		fmt.Fprintf(&b, "  %q,\n", item)
 	}
@@ -128,21 +143,22 @@ func codexStatusLineBlock(comment string) string {
 	return b.String()
 }
 
+// tomlHeader returns the name inside a [table] or [[array]] header line, or "".
 func tomlHeader(line string) string {
 	line = strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
-	if len(line) < 3 || !strings.HasPrefix(line, "[") || !strings.HasSuffix(line, "]") || strings.HasPrefix(line, "[[") {
+	if len(line) < 3 || !strings.HasPrefix(line, "[") || !strings.HasSuffix(line, "]") {
 		return ""
 	}
 	return strings.TrimSpace(line[1 : len(line)-1])
 }
 
-func isStatusLineAssignment(line string) bool {
-	line = strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
-	if !strings.HasPrefix(line, "status_line") {
-		return false
+// assignmentKey returns the whitespace-free key of a "key = value" line, or "".
+func assignmentKey(line string) string {
+	key, _, ok := strings.Cut(line, "=")
+	if !ok {
+		return ""
 	}
-	rest := strings.TrimSpace(strings.TrimPrefix(line, "status_line"))
-	return strings.HasPrefix(rest, "=")
+	return strings.Join(strings.Fields(key), "")
 }
 
 func assignmentEnd(lines []string, start, limit int) int {

@@ -4,30 +4,6 @@ import (
 	"testing"
 )
 
-func TestRegisterWithPriority_Order(t *testing.T) {
-	// Save and restore original registry
-	origRegistry := registry
-	registry = nil
-	defer func() { registry = origRegistry }()
-
-	// Register in reverse priority order
-	RegisterWithPriority(30, func(workDir, sessionID string) Provider { return nil })
-	RegisterWithPriority(10, func(workDir, sessionID string) Provider { return nil })
-	RegisterWithPriority(20, func(workDir, sessionID string) Provider { return nil })
-
-	// Verify they're sorted by priority
-	if len(registry) != 3 {
-		t.Fatalf("expected 3 registered providers, got %d", len(registry))
-	}
-
-	expected := []int{10, 20, 30}
-	for i, rp := range registry {
-		if rp.priority != expected[i] {
-			t.Errorf("registry[%d].priority = %d, want %d", i, rp.priority, expected[i])
-		}
-	}
-}
-
 type mockProvider struct {
 	name      string
 	available bool
@@ -44,13 +20,12 @@ func TestSelectProvider_Priority(t *testing.T) {
 	registry = nil
 	defer func() { registry = origRegistry }()
 
-	// Register providers: kt (available), tk (available)
-	// kt should win due to higher priority
-	RegisterWithPriority(PriorityKT, func(workDir, sessionID string) Provider {
-		return &mockProvider{name: "kt", available: true}
-	})
+	// Registered lowest priority first, so only the priority sort makes kt win
 	RegisterWithPriority(PriorityTK, func(workDir, sessionID string) Provider {
 		return &mockProvider{name: "tk", available: true}
+	})
+	RegisterWithPriority(PriorityKT, func(workDir, sessionID string) Provider {
+		return &mockProvider{name: "kt", available: true}
 	})
 
 	provider := SelectProvider("/test", "")

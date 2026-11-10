@@ -52,15 +52,15 @@ type StatusData struct {
 	GitUnstagedFiles int // Unstaged files count
 
 	// Token metrics (raw values - use fmtTokens for display)
-	// TokensInput, TokensOutput, TokensCached are per-call (last API call only).
-	// TokensTotal is session-cumulative (sum across all API calls).
-	TokensInput   int64   // Input tokens (per-call)
-	TokensOutput  int64   // Output tokens (per-call)
-	TokensCached  int64   // Cached tokens (per-call)
-	TokensTotal   int64   // Total tokens (session-cumulative)
+	// From Claude Code stdin these describe the last API call, and TokensTotal is the
+	// tokens in context plus the last output. The transcript fallback (older Claude
+	// Code) sums them over the session instead.
+	TokensInput   int64   // Input tokens
+	TokensOutput  int64   // Output tokens
+	TokensCached  int64   // Cached tokens (read + creation)
+	TokensTotal   int64   // Total tokens
 	ContextLength int64   // Current context length
-	ContextPct    float64 // Context percentage (0-100)
-	ContextPctUse float64 // Usable context percentage (0-100)
+	ContextPct    float64 // Context window used (0-100)
 
 	// Context window metadata
 	ContextWindowSize int64 // Max context window size in tokens (200k or 1M)
@@ -95,6 +95,7 @@ type StatusData struct {
 	SessionName       string // Custom session name from --name or /rename
 	OutputStyle       string // Active output style name
 	Exceeds200kTokens bool   // Whether last response exceeds 200k tokens
+	FastMode          bool   // Fast mode on/off
 	EffortLevel       string // low|medium|high|xhigh|max
 	ThinkingEnabled   bool   // Extended thinking on/off
 	VimMode           string // NORMAL|INSERT|VISUAL|VISUAL LINE
@@ -110,6 +111,7 @@ type StatusData struct {
 	PRNumber      int    // Open PR number (0 when absent)
 	PRURL         string // PR URL
 	PRReviewState string // approved|pending|changes_requested|draft
+	PRKind        string // "mr" for a GitLab merge request, empty for a GitHub PR
 
 	// Worktree session (--worktree)
 	WorktreeName           string

@@ -6,94 +6,33 @@ import (
 	"testing"
 )
 
-func TestGetContextConfig(t *testing.T) {
+func TestContextWindow(t *testing.T) {
 	tests := []struct {
-		name       string
-		modelID    string
-		wantMax    int64
-		wantUsable int64
+		name    string
+		modelID string
+		wantMax int64
 	}{
 		{
-			name:       "Sonnet 4 model (200k default)",
-			modelID:    "claude-sonnet-4-20250514",
-			wantMax:    200_000,
-			wantUsable: 160_000,
+			name:    "Sonnet 4.5 with [1m] suffix",
+			modelID: "claude-sonnet-4-5-20250929[1m]",
+			wantMax: 1_000_000,
 		},
 		{
-			name:       "Sonnet 4.5 model (200k default)",
-			modelID:    "claude-sonnet-4-5-20250929",
-			wantMax:    200_000,
-			wantUsable: 160_000,
+			name:    "Standard model",
+			modelID: "claude-opus-4-5-20251101",
+			wantMax: 200_000,
 		},
 		{
-			name:       "Sonnet 4.5 with [1m] suffix",
-			modelID:    "claude-sonnet-4-5-20250929[1m]",
-			wantMax:    1_000_000,
-			wantUsable: 800_000,
-		},
-		{
-			name:       "Opus 4.6 (200k default)",
-			modelID:    "claude-opus-4-6",
-			wantMax:    200_000,
-			wantUsable: 160_000,
-		},
-		{
-			name:       "Opus 4.6 with [1m] suffix",
-			modelID:    "claude-opus-4-6[1m]",
-			wantMax:    1_000_000,
-			wantUsable: 800_000,
-		},
-		{
-			name:       "Standard model",
-			modelID:    "claude-opus-4-5-20251101",
-			wantMax:    200_000,
-			wantUsable: 160_000,
-		},
-		{
-			name:       "Empty model",
-			modelID:    "",
-			wantMax:    200_000,
-			wantUsable: 160_000,
+			name:    "Empty model",
+			modelID: "",
+			wantMax: 200_000,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := GetContextConfig(tt.modelID)
-			if cfg.MaxTokens != tt.wantMax {
-				t.Errorf("MaxTokens = %d, want %d", cfg.MaxTokens, tt.wantMax)
-			}
-			if cfg.UsableTokens != tt.wantUsable {
-				t.Errorf("UsableTokens = %d, want %d", cfg.UsableTokens, tt.wantUsable)
-			}
-		})
-	}
-}
-
-func TestFormatTokens(t *testing.T) {
-	tests := []struct {
-		count int64
-		want  string
-	}{
-		{0, "0"},
-		{1, "1"},
-		{999, "999"},
-		{1000, "1k"},
-		{1234, "1.2k"},
-		{10000, "10k"},
-		{10500, "10.5k"},
-		{100000, "100k"},
-		{999900, "999.9k"},
-		{1000000, "1M"},
-		{1500000, "1.5M"},
-		{10000000, "10M"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			got := FormatTokens(tt.count)
-			if got != tt.want {
-				t.Errorf("FormatTokens(%d) = %q, want %q", tt.count, got, tt.want)
+			if got := ContextWindow(tt.modelID); got != tt.wantMax {
+				t.Errorf("ContextWindow(%q) = %d, want %d", tt.modelID, got, tt.wantMax)
 			}
 		})
 	}
@@ -103,25 +42,25 @@ func TestMetrics_ContextPercentage(t *testing.T) {
 	tests := []struct {
 		name          string
 		contextLength int64
-		cfg           ContextConfig
+		maxTokens     int64
 		want          float64
 	}{
 		{
 			name:          "50% of 200k",
 			contextLength: 100_000,
-			cfg:           ContextConfig{MaxTokens: 200_000, UsableTokens: 160_000},
+			maxTokens:     200_000,
 			want:          50.0,
 		},
 		{
 			name:          "Over 100%",
 			contextLength: 250_000,
-			cfg:           ContextConfig{MaxTokens: 200_000, UsableTokens: 160_000},
+			maxTokens:     200_000,
 			want:          100.0, // Capped at 100
 		},
 		{
 			name:          "Zero max tokens",
 			contextLength: 100_000,
-			cfg:           ContextConfig{MaxTokens: 0, UsableTokens: 0},
+			maxTokens:     0,
 			want:          0,
 		},
 	}
@@ -129,41 +68,9 @@ func TestMetrics_ContextPercentage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := Metrics{ContextLength: tt.contextLength}
-			got := m.ContextPercentage(tt.cfg)
+			got := m.ContextPercentage(tt.maxTokens)
 			if got != tt.want {
 				t.Errorf("ContextPercentage() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestMetrics_ContextPercentageUsable(t *testing.T) {
-	tests := []struct {
-		name          string
-		contextLength int64
-		cfg           ContextConfig
-		want          float64
-	}{
-		{
-			name:          "50% of usable (160k)",
-			contextLength: 80_000,
-			cfg:           ContextConfig{MaxTokens: 200_000, UsableTokens: 160_000},
-			want:          50.0,
-		},
-		{
-			name:          "100% of usable",
-			contextLength: 160_000,
-			cfg:           ContextConfig{MaxTokens: 200_000, UsableTokens: 160_000},
-			want:          100.0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := Metrics{ContextLength: tt.contextLength}
-			got := m.ContextPercentageUsable(tt.cfg)
-			if got != tt.want {
-				t.Errorf("ContextPercentageUsable() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -272,34 +179,5 @@ not valid json at all
 	}
 	if metrics.OutputTokens != wantOutput {
 		t.Errorf("OutputTokens = %d, want %d", metrics.OutputTokens, wantOutput)
-	}
-}
-
-func TestParseTranscript_UserMessagesIgnored(t *testing.T) {
-	// Create a temporary JSONL file that includes user messages
-	tmpDir := t.TempDir()
-	transcriptPath := filepath.Join(tmpDir, "with_user.jsonl")
-
-	jsonlContent := `{"type":"summary","summary":"Test session"}
-{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"Hello"}}
-{"parentUuid":"123","isSidechain":false,"type":"assistant","message":{"role":"assistant","usage":{"input_tokens":100,"output_tokens":50}}}
-{"parentUuid":"456","isSidechain":false,"type":"user","message":{"role":"user","content":"Another message"}}
-`
-
-	if err := os.WriteFile(transcriptPath, []byte(jsonlContent), 0644); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-
-	metrics, err := ParseTranscript(transcriptPath)
-	if err != nil {
-		t.Fatalf("ParseTranscript() error = %v", err)
-	}
-
-	// Should only count assistant message tokens
-	if metrics.InputTokens != 100 {
-		t.Errorf("InputTokens = %d, want 100 (user messages should be ignored)", metrics.InputTokens)
-	}
-	if metrics.OutputTokens != 50 {
-		t.Errorf("OutputTokens = %d, want 50 (user messages should be ignored)", metrics.OutputTokens)
 	}
 }

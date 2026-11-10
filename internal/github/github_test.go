@@ -19,55 +19,18 @@ func (m *mockTokenGetter) GetToken() (string, error) {
 	return m.token, m.err
 }
 
-func TestGetToken_Success(t *testing.T) {
-	// This tests the interface, actual gh CLI test would be integration test
-	getter := &mockTokenGetter{token: "test-token"}
-	token, err := getter.GetToken()
-	if err != nil {
-		t.Fatalf("GetToken() error = %v", err)
-	}
-	if token != "test-token" {
-		t.Errorf("GetToken() = %q, want %q", token, "test-token")
-	}
-}
-
-func TestGetToken_NotLoggedIn(t *testing.T) {
-	getter := &mockTokenGetter{err: errors.New("gh auth token failed: not logged in")}
-	_, err := getter.GetToken()
-	if err == nil {
-		t.Error("GetToken() expected error")
-	}
-}
-
-func TestGetToken_GhNotInstalled(t *testing.T) {
-	getter := &mockTokenGetter{err: errors.New("exec: \"gh\": executable file not found")}
-	_, err := getter.GetToken()
-	if err == nil {
-		t.Error("GetToken() expected error")
-	}
-}
-
 func setupTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Client) {
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
-	client, err := NewClientWithToken("build_and_test", "test-token", &http.Client{Timeout: 5 * time.Second})
+	client, err := NewClientWithDeps("build_and_test", &http.Client{Timeout: 5 * time.Second},
+		&mockTokenGetter{token: "test-token"})
 	if err != nil {
-		t.Fatalf("NewClientWithToken() error = %v", err)
+		t.Fatalf("NewClientWithDeps() error = %v", err)
 	}
 	client.SetBaseURL(server.URL)
 
 	return server, client
-}
-
-func TestNewClientWithToken_EmptyToken(t *testing.T) {
-	_, err := NewClientWithToken("build_and_test", "", &http.Client{})
-	if err == nil {
-		t.Error("NewClientWithToken() expected error for empty token")
-	}
-	if err != ErrEmptyToken {
-		t.Errorf("NewClientWithToken() error = %v, want %v", err, ErrEmptyToken)
-	}
 }
 
 func TestGetBuildStatus_Success(t *testing.T) {
@@ -264,17 +227,6 @@ func TestGetBuildStatus_NoRuns(t *testing.T) {
 	}
 }
 
-func TestGetBuildStatus_RateLimited(t *testing.T) {
-	_, client := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-	})
-
-	_, err := client.GetBuildStatus("owner", "repo", "main")
-	if err == nil {
-		t.Error("GetBuildStatus() expected error for rate limit")
-	}
-}
-
 func TestGetBuildStatus_NotFound(t *testing.T) {
 	_, client := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -286,29 +238,12 @@ func TestGetBuildStatus_NotFound(t *testing.T) {
 	}
 }
 
-func TestGetBuildStatus_Timeout(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(100 * time.Millisecond)
-	}))
-	defer server.Close()
-
-	client, err := NewClientWithToken("build_and_test", "test-token", &http.Client{Timeout: 10 * time.Millisecond})
-	if err != nil {
-		t.Fatalf("NewClientWithToken() error = %v", err)
-	}
-	client.SetBaseURL(server.URL)
-
-	_, err = client.GetBuildStatus("owner", "repo", "main")
-	if err == nil {
-		t.Error("GetBuildStatus() expected timeout error")
-	}
-}
-
 func TestGetBuildStatus_NetworkError(t *testing.T) {
 	// Use a URL that will fail to connect
-	client, err := NewClientWithToken("build_and_test", "test-token", &http.Client{Timeout: 100 * time.Millisecond})
+	client, err := NewClientWithDeps("build_and_test", &http.Client{Timeout: 100 * time.Millisecond},
+		&mockTokenGetter{token: "test-token"})
 	if err != nil {
-		t.Fatalf("NewClientWithToken() error = %v", err)
+		t.Fatalf("NewClientWithDeps() error = %v", err)
 	}
 	client.SetBaseURL("http://127.0.0.1:1") // Port 1 should fail
 

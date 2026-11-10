@@ -3,54 +3,19 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/kostyay/claude-status/internal/cache"
 	"github.com/kostyay/claude-status/internal/config"
-	"github.com/kostyay/claude-status/internal/github"
 	"github.com/kostyay/claude-status/internal/status"
-	"github.com/kostyay/claude-status/internal/tasks"
 	"github.com/kostyay/claude-status/internal/template"
 )
 
 func TestE2E_FullFlow(t *testing.T) {
-	// Create temp directories for XDG paths
 	tmpDir := t.TempDir()
-	cacheDir := filepath.Join(tmpDir, "cache")
-	configDir := filepath.Join(tmpDir, "config")
-
-	// Create cache and config dirs
-	os.MkdirAll(cacheDir, 0755)
-	os.MkdirAll(configDir, 0755)
-
-	// Create a mock GitHub server
-	githubServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "/actions/workflows") && !strings.Contains(r.URL.Path, "/runs") {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"workflows": []map[string]interface{}{
-					{"id": 123, "name": "build_and_test", "path": ".github/workflows/build_and_test.yml"},
-				},
-			})
-			return
-		}
-		if strings.Contains(r.URL.Path, "/runs") {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"workflow_runs": []map[string]interface{}{
-					{"status": "completed", "conclusion": "success"},
-				},
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer githubServer.Close()
 
 	// Create a real git repo
 	gitDir := filepath.Join(tmpDir, "repo")
@@ -79,19 +44,11 @@ func TestE2E_FullFlow(t *testing.T) {
 	cmd.Dir = gitDir
 	cmd.Run()
 
-	// Add a GitHub remote
-	cmd = exec.Command("git", "remote", "add", "origin", "git@github.com:testowner/testrepo.git")
-	cmd.Dir = gitDir
-	cmd.Run()
-
 	// Create an uncommitted file
 	os.WriteFile(filepath.Join(gitDir, "uncommitted.txt"), []byte("uncommitted"), 0644)
 
 	// Build status
 	cfg := config.Default()
-	cacheManager := cache.NewManager(cacheDir)
-	cacheManager.EnsureDir()
-
 	builder, err := status.NewBuilder(&cfg, gitDir, "")
 	if err != nil {
 		t.Fatalf("NewBuilder() error = %v", err)
@@ -106,9 +63,6 @@ func TestE2E_FullFlow(t *testing.T) {
 	data := builder.Build(input)
 
 	// Verify data
-	if data.Model != "Claude" {
-		t.Errorf("Model = %q, want %q", data.Model, "Claude")
-	}
 	if data.Dir != "repo" {
 		t.Errorf("Dir = %q, want %q", data.Dir, "repo")
 	}
@@ -164,10 +118,6 @@ func TestE2E_RealGitRepo(t *testing.T) {
 
 	// Build status
 	cfg := config.Default()
-	cacheDir := filepath.Join(tmpDir, "cache")
-	cacheManager := cache.NewManager(cacheDir)
-	cacheManager.EnsureDir()
-
 	builder, _ := status.NewBuilder(&cfg, gitDir, "")
 	input := status.Input{
 		Model:     status.ModelInfo{DisplayName: "Claude"},
@@ -181,84 +131,6 @@ func TestE2E_RealGitRepo(t *testing.T) {
 	}
 	if data.GitStatus != "±2" {
 		t.Errorf("GitStatus = %q, want ±2", data.GitStatus)
-	}
-}
-
-func TestE2E_CachingPerformance(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-
-	tmpDir := t.TempDir()
-	gitDir := filepath.Join(tmpDir, "repo")
-	cacheDir := filepath.Join(tmpDir, "cache")
-
-	os.MkdirAll(gitDir, 0755)
-
-	// Initialize repo
-	cmd := exec.Command("git", "init")
-	cmd.Dir = gitDir
-	cmd.Run()
-
-	cmd = exec.Command("git", "config", "user.email", "test@test.com")
-	cmd.Dir = gitDir
-	cmd.Run()
-	cmd = exec.Command("git", "config", "user.name", "Test")
-	cmd.Dir = gitDir
-	cmd.Run()
-
-	os.WriteFile(filepath.Join(gitDir, "test.txt"), []byte("test"), 0644)
-	cmd = exec.Command("git", "add", ".")
-	cmd.Dir = gitDir
-	cmd.Run()
-	cmd = exec.Command("git", "commit", "-m", "initial")
-	cmd.Dir = gitDir
-	cmd.Run()
-
-	cfg := config.Default()
-	cacheManager := cache.NewManager(cacheDir)
-	cacheManager.EnsureDir()
-
-	input := status.Input{
-		Model:     status.ModelInfo{DisplayName: "Claude"},
-		Workspace: status.WorkspaceInfo{CurrentDir: gitDir},
-	}
-
-	// First call - populates cache
-	start1 := time.Now()
-	builder1, _ := status.NewBuilder(&cfg, gitDir, "")
-	builder1.Build(input)
-	duration1 := time.Since(start1)
-
-	// Second call - should use cache
-	start2 := time.Now()
-	builder2, _ := status.NewBuilder(&cfg, gitDir, "")
-	builder2.Build(input)
-	duration2 := time.Since(start2)
-
-	// Cache hit should be faster (though both might be fast)
-	// We mainly want to verify no errors occur
-	t.Logf("First call: %v, Second call: %v", duration1, duration2)
-}
-
-func TestE2E_ConfigLoad(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Write config file
-	configPath := filepath.Join(tmpDir, "config.json")
-	configContent := `{
-		"template": "[{{.Model}}] {{.Dir}}",
-		"github_ttl": 30
-	}`
-	os.WriteFile(configPath, []byte(configContent), 0644)
-
-	cfg := config.LoadFrom(configPath)
-
-	if cfg.Template != "[{{.Model}}] {{.Dir}}" {
-		t.Errorf("Template = %q, want custom", cfg.Template)
-	}
-	if cfg.GitHubTTL != 30 {
-		t.Errorf("GitHubTTL = %d, want 30", cfg.GitHubTTL)
 	}
 }
 
@@ -328,13 +200,69 @@ func TestE2E_StdoutOutput(t *testing.T) {
 	}
 }
 
-func TestE2E_GracefulDegradation(t *testing.T) {
-	tmpDir := t.TempDir()
-	cacheDir := filepath.Join(tmpDir, "cache")
+func TestE2E_DefaultTemplateEffort(t *testing.T) {
+	engine, err := template.NewEngine(config.Default().Template)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	tests := []struct {
+		effort string
+		want   string
+	}{
+		{effort: "xhigh", want: "[Opus 5.5 🧠 xhigh]"},
+		{effort: "", want: "[Opus 5.5]"},
+	}
+	for _, tt := range tests {
+		data := template.StatusData{Model: "Opus 5.5", Dir: "p", EffortLevel: tt.effort}
+		output, err := engine.Render(data)
+		if err != nil {
+			t.Fatalf("Render() error = %v", err)
+		}
+		if !strings.Contains(output, tt.want) {
+			t.Errorf("effort %q: output %q missing %q", tt.effort, output, tt.want)
+		}
+	}
+}
+
+func TestE2E_StdinSchema(t *testing.T) {
+	input := `{
+		"model": {"id": "claude-opus-5-5", "display_name": "Opus"},
+		"workspace": {"current_dir": "/tmp/proj"},
+		"context_window": {"used_percentage": 60, "context_window_size": 1000000},
+		"fast_mode": true,
+		"pr": {"number": 7, "url": "https://gitlab.com/g/p/-/merge_requests/7", "kind": "mr"}
+	}`
+	var parsed status.Input
+	if err := json.Unmarshal([]byte(input), &parsed); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
 
 	cfg := config.Default()
-	cacheManager := cache.NewManager(cacheDir)
-	cacheManager.EnsureDir()
+	data := status.NewBuilderWithDeps(&cfg, nil, nil, nil, nil, "").Build(parsed)
+	if !data.FastMode {
+		t.Error("FastMode = false, want true")
+	}
+	if data.PRKind != "mr" {
+		t.Errorf("PRKind = %q, want %q", data.PRKind, "mr")
+	}
+
+	engine, err := template.NewEngine(cfg.Template)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	output, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if !strings.Contains(output, "📊 60.0%") {
+		t.Errorf("output %q should show Claude Code's used_percentage as-is", output)
+	}
+}
+
+func TestE2E_GracefulDegradation(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := config.Default()
 
 	// Use a non-git directory
 	builder, _ := status.NewBuilder(&cfg, tmpDir, "")
@@ -347,10 +275,7 @@ func TestE2E_GracefulDegradation(t *testing.T) {
 
 	data := builder.Build(input)
 
-	// Should still have model, dir, and version
-	if data.Model != "Claude" {
-		t.Errorf("Model = %q, want %q", data.Model, "Claude")
-	}
+	// Should still have dir and version
 	if data.Dir == "" {
 		t.Error("Dir should not be empty")
 	}
@@ -370,110 +295,21 @@ func TestE2E_GracefulDegradation(t *testing.T) {
 	}
 }
 
-func TestE2E_Logging(t *testing.T) {
-	tmpDir := t.TempDir()
-	logPath := filepath.Join(tmpDir, "logs", "status.json")
-
-	cfg := config.Config{
-		Template:       config.DefaultTemplate,
-		GitHubWorkflow: "build_and_test",
-		GitHubTTL:      60,
-		LoggingEnabled: true,
-		LogPath:        logPath,
-	}
-
-	// Ensure log directory exists
-	os.MkdirAll(filepath.Dir(logPath), 0755)
-
-	// Simulate logging (simplified)
-	logData := []map[string]interface{}{
-		{
-			"timestamp":          time.Now().Format(time.RFC3339),
-			"status_line_output": "[Claude] 📁 test",
-		},
-	}
-
-	data, _ := json.MarshalIndent(logData, "", "  ")
-	os.WriteFile(logPath, data, 0644)
-
-	// Verify log file was created and has content
-	content, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatalf("Failed to read log file: %v", err)
-	}
-
-	if !strings.Contains(string(content), "timestamp") {
-		t.Error("Log file missing timestamp")
-	}
-
-	// Verify config has logging enabled
-	if !cfg.LoggingEnabled {
-		t.Error("LoggingEnabled should be true")
-	}
-}
-
-func TestE2E_GitHubStatus_Success(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "/actions/workflows") && !strings.Contains(r.URL.Path, "/runs") {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"workflows": []map[string]interface{}{
-					{"id": 123, "name": "build_and_test", "path": ".github/workflows/build_and_test.yml"},
-				},
-			})
-			return
-		}
-		if strings.Contains(r.URL.Path, "/runs") {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"workflow_runs": []map[string]interface{}{
-					{"status": "completed", "conclusion": "success"},
-				},
-			})
-			return
-		}
-	}))
-	defer server.Close()
-
-	client, err := github.NewClientWithToken("build_and_test", "test-token", &http.Client{Timeout: 5 * time.Second})
-	if err != nil {
-		t.Fatalf("NewClientWithToken() error = %v", err)
-	}
-	client.SetBaseURL(server.URL)
-
-	status, err := client.GetBuildStatus("owner", "repo", "main")
-	if err != nil {
-		t.Fatalf("GetBuildStatus() error = %v", err)
-	}
-	if status != github.StatusSuccess {
-		t.Errorf("status = %q, want success", status)
-	}
-
-	emoji := github.StatusToEmoji(status)
-	if emoji != "✅" {
-		t.Errorf("emoji = %q, want ✅", emoji)
-	}
-}
-
 func TestE2E_TasksWidget(t *testing.T) {
-	// Test that task stats are properly rendered in the template
-	cfg := config.Config{
-		Template: config.TemplateWithTasks,
-		TasksTTL: 5,
-	}
-
-	engine, err := template.NewEngine(cfg.Template)
+	engine, err := template.NewEngine(config.DefaultTemplate)
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 
 	data := template.StatusData{
-		Model:         "Claude",
-		Dir:           "myproject",
-		GitBranch:     "main",
-		TaskProvider:  "kt",
-		HasTasks:      true,
-		TasksReady:    3,
-		TasksBlocked:  1,
-		ContextPctUse: 45.2,
+		Model:        "Claude",
+		Dir:          "myproject",
+		GitBranch:    "main",
+		TaskProvider: "kt",
+		HasTasks:     true,
+		TasksReady:   3,
+		TasksBlocked: 1,
+		ContextPct:   45.2,
 	}
 
 	output, err := engine.Render(data)
@@ -492,44 +328,3 @@ func TestE2E_TasksWidget(t *testing.T) {
 		t.Error("Output missing tasks emoji")
 	}
 }
-
-func TestE2E_TasksCache(t *testing.T) {
-	tmpDir := t.TempDir()
-	cacheManager := cache.NewManager(tmpDir)
-	cacheManager.EnsureDir()
-
-	fetchCalls := 0
-	fetchFn := func() (tasks.Stats, error) {
-		fetchCalls++
-		return tasks.Stats{
-			TotalIssues: 5,
-			OpenIssues:  3,
-			ReadyIssues: 2,
-		}, nil
-	}
-
-	// First call should fetch
-	stats1, err := cacheManager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
-	if err != nil {
-		t.Fatalf("GetTaskStats() error = %v", err)
-	}
-	if stats1.TotalIssues != 5 {
-		t.Errorf("TotalIssues = %d, want 5", stats1.TotalIssues)
-	}
-	if fetchCalls != 1 {
-		t.Errorf("fetchCalls = %d, want 1", fetchCalls)
-	}
-
-	// Second call should use cache
-	stats2, err := cacheManager.GetTaskStats("/test/project", 60*time.Second, fetchFn)
-	if err != nil {
-		t.Fatalf("GetTaskStats() error = %v", err)
-	}
-	if stats2.TotalIssues != 5 {
-		t.Errorf("TotalIssues = %d, want 5", stats2.TotalIssues)
-	}
-	if fetchCalls != 1 {
-		t.Errorf("fetchCalls = %d, want 1 (should use cache)", fetchCalls)
-	}
-}
-

@@ -25,7 +25,7 @@ func (e *ExecCommander) Run(ctx context.Context, dir string, args ...string) (st
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimRight(string(out), "\r\n"), nil
 }
 
 // DiffStats holds git diff statistics.
@@ -71,11 +71,6 @@ func NewClientWithCommander(workDir string, cmd Commander) (*Client, error) {
 		gitDir:  gitDir,
 		cmd:     cmd,
 	}, nil
-}
-
-// GitDir returns the path to the .git directory.
-func (c *Client) GitDir() string {
-	return c.gitDir
 }
 
 // Branch returns the current branch name.
