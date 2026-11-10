@@ -3,7 +3,6 @@ package tokens
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 )
@@ -48,14 +47,12 @@ func ContextWindow(modelID string) int64 {
 
 // transcriptLine represents a single line in the JSONL transcript.
 type transcriptLine struct {
-	Type        string   `json:"type"`
 	IsSidechain bool     `json:"isSidechain"`
 	Message     *message `json:"message"`
 }
 
 // message represents the message field in a transcript line.
 type message struct {
-	Role  string `json:"role"`
 	Usage *usage `json:"usage"`
 }
 
@@ -68,7 +65,7 @@ type usage struct {
 }
 
 // ParseTranscript reads a JSONL transcript file and calculates token metrics.
-// It skips sidechain messages (agent messages) and non-assistant messages.
+// It skips sidechain (agent) messages and lines without usage data.
 func ParseTranscript(path string) (Metrics, error) {
 	if path == "" {
 		return Metrics{}, nil
@@ -133,24 +130,4 @@ func (m Metrics) ContextPercentage(maxTokens int64) float64 {
 		return 0
 	}
 	return min(float64(m.ContextLength)/float64(maxTokens)*100, 100)
-}
-
-// FormatTokens formats a token count in a human-readable way.
-// e.g., 1234 -> "1.2k", 1234567 -> "1.2M"
-func FormatTokens(count int64) string {
-	if count >= 1_000_000 {
-		return formatWithSuffix(float64(count)/1_000_000, "M")
-	}
-	if count >= 1_000 {
-		return formatWithSuffix(float64(count)/1_000, "k")
-	}
-	return fmt.Sprintf("%d", count)
-}
-
-func formatWithSuffix(f float64, suffix string) string {
-	// Format with one decimal place
-	s := fmt.Sprintf("%.1f", f)
-	// Remove trailing .0
-	s = strings.TrimSuffix(s, ".0")
-	return s + suffix
 }

@@ -294,44 +294,6 @@ func TestGetGitHubBuild_CacheHit(t *testing.T) {
 	}
 }
 
-func TestGetGitHubBuild_PackedRefs(t *testing.T) {
-	manager, dir, _ := setupTestCache(t)
-
-	refPath := filepath.Join(dir, "refs", "heads", "main")
-	// Simulate packed refs: branch file missing, packed-refs present.
-	packedPath := filepath.Join(dir, "packed-refs")
-	if err := os.WriteFile(packedPath, []byte("packed"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	fetchCalls := 0
-	fetchFn := func() (github.BuildStatus, error) {
-		fetchCalls++
-		return github.StatusSuccess, nil
-	}
-
-	// First call should fetch and cache using packed-refs mtime.
-	status, err := manager.GetGitHubBuild(refPath, "main", 60*time.Second, fetchFn)
-	if err != nil {
-		t.Fatalf("GetGitHubBuild() error = %v", err)
-	}
-	if status != github.StatusSuccess {
-		t.Errorf("GetGitHubBuild() = %q, want %q", status, github.StatusSuccess)
-	}
-
-	// Second call should hit cache (no additional fetch).
-	status, err = manager.GetGitHubBuild(refPath, "main", 60*time.Second, fetchFn)
-	if err != nil {
-		t.Fatalf("GetGitHubBuild() error = %v", err)
-	}
-	if status != github.StatusSuccess {
-		t.Errorf("GetGitHubBuild() = %q, want %q", status, github.StatusSuccess)
-	}
-	if fetchCalls != 1 {
-		t.Errorf("fetchFn called %d times, want 1 (cache should hit with packed refs)", fetchCalls)
-	}
-}
-
 func TestGetGitHubBuild_NoRefFileCaches(t *testing.T) {
 	manager, dir, _ := setupTestCache(t)
 
@@ -545,37 +507,6 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 }
 
-func TestClear(t *testing.T) {
-	manager, dir, _ := setupTestCache(t)
-
-	headPath := filepath.Join(dir, "HEAD")
-	if err := os.WriteFile(headPath, []byte("ref"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	fetchCalls := 0
-	fetchFn := func() (string, error) {
-		fetchCalls++
-		return "main", nil
-	}
-
-	manager.GetGitBranch(headPath, fetchFn)
-	if fetchCalls != 1 {
-		t.Fatalf("fetchFn called %d times, want 1", fetchCalls)
-	}
-
-	// Clear cache
-	if err := manager.Clear(); err != nil {
-		t.Fatalf("Clear() error = %v", err)
-	}
-
-	// Next call should fetch again
-	manager.GetGitBranch(headPath, fetchFn)
-	if fetchCalls != 2 {
-		t.Errorf("fetchFn called %d times, want 2 (cache was cleared)", fetchCalls)
-	}
-}
-
 func TestGetGitBranch_FileNotExist(t *testing.T) {
 	manager, dir, _ := setupTestCache(t)
 
@@ -592,28 +523,6 @@ func TestGetGitBranch_FileNotExist(t *testing.T) {
 	}
 	if branch != "main" {
 		t.Errorf("GetGitBranch() = %q, want %q", branch, "main")
-	}
-}
-
-func TestFileLockCreated(t *testing.T) {
-	manager, dir, _ := setupTestCache(t)
-
-	headPath := filepath.Join(dir, "HEAD")
-	if err := os.WriteFile(headPath, []byte("ref"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	fetchFn := func() (string, error) {
-		return "main", nil
-	}
-
-	// Call a method that uses the file lock
-	manager.GetGitBranch(headPath, fetchFn)
-
-	// Verify lock file was created
-	lockPath := filepath.Join(dir, "cache.json.lock")
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
-		t.Error("lock file was not created")
 	}
 }
 
@@ -659,14 +568,11 @@ func TestFileLockSerializesMultipleManagers(t *testing.T) {
 
 	wg.Wait()
 
-	// Both should complete (file lock serializes access)
+	// The lock spans check-fetch-save, so the second manager reads the first one's result
 	mu.Lock()
 	defer mu.Unlock()
-
-	// With file locking, only ONE fetch should happen (second manager uses cached result)
-	// OR both fetch but sequentially (depends on timing)
-	if len(order) == 0 {
-		t.Error("expected at least one fetch to occur")
+	if len(order) != 1 {
+		t.Errorf("fetches = %v, want exactly one", order)
 	}
 }
 

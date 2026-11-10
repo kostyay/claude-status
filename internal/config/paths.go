@@ -28,11 +28,6 @@ func ConfigPath() string {
 	return filepath.Join(ConfigDir(), "config.json")
 }
 
-// CachePath returns the full path to the cache file.
-func CachePath() string {
-	return filepath.Join(CacheDir(), "cache.json")
-}
-
 // LogPath returns the default path to the log file.
 func LogPath() string {
 	return filepath.Join(DataDir(), "status_line.json")

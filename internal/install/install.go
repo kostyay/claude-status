@@ -44,11 +44,6 @@ type StatusLine struct {
 	Padding int    `json:"padding"`
 }
 
-// Run executes the original Claude Code install flow.
-func Run(w io.Writer, r io.Reader) error {
-	return RunTarget(w, r, TargetClaude)
-}
-
 // RunTarget executes the install flow for the selected application.
 func RunTarget(w io.Writer, r io.Reader, target Target) error {
 	reader, ok := r.(*bufio.Reader)

@@ -76,20 +76,6 @@ func NewClientWithDeps(workflow string, httpClient HTTPClient, tokenGetter Token
 // ErrEmptyToken is returned when an empty token is provided.
 var ErrEmptyToken = errors.New("github token cannot be empty")
 
-// NewClientWithToken creates a new GitHub client with an explicit token.
-// Returns an error if the token is empty.
-func NewClientWithToken(workflow, token string, httpClient HTTPClient) (*Client, error) {
-	if token == "" {
-		return nil, ErrEmptyToken
-	}
-	return &Client{
-		token:      token,
-		httpClient: httpClient,
-		workflow:   workflow,
-		baseURL:    "https://api.github.com",
-	}, nil
-}
-
 // SetBaseURL sets the base URL for API requests (useful for testing).
 func (c *Client) SetBaseURL(url string) {
 	c.baseURL = url

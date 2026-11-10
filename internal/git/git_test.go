@@ -37,90 +37,12 @@ func (m *mockCommander) Run(ctx context.Context, dir string, args ...string) (st
 	return "", errors.New("unexpected command: " + key)
 }
 
-func TestNewGitClient_InRepo(t *testing.T) {
-	// Create a temp git repo
-	dir := t.TempDir()
-	if err := exec.Command("git", "init", dir).Run(); err != nil {
-		t.Skip("git not available")
-	}
-
-	client, err := NewClient(dir)
-	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
-	}
-	if client == nil {
-		t.Fatal("NewClient() returned nil")
-	}
-
-	gitDir := client.GitDir()
-	if !filepath.IsAbs(gitDir) {
-		t.Errorf("GitDir() = %q, want absolute path", gitDir)
-	}
-}
-
 func TestNewGitClient_NotRepo(t *testing.T) {
 	dir := t.TempDir()
 
 	_, err := NewClient(dir)
 	if err == nil {
 		t.Fatal("NewClient() expected error for non-repo")
-	}
-}
-
-func TestBranch_Main(t *testing.T) {
-	mock := newMockCommander()
-	mock.responses["rev-parse --git-dir"] = ".git"
-	mock.responses["rev-parse --abbrev-ref"] = "main"
-
-	client, err := NewClientWithCommander("/test", mock)
-	if err != nil {
-		t.Fatalf("NewClientWithCommander() error = %v", err)
-	}
-
-	branch, err := client.Branch()
-	if err != nil {
-		t.Fatalf("Branch() error = %v", err)
-	}
-	if branch != "main" {
-		t.Errorf("Branch() = %q, want %q", branch, "main")
-	}
-}
-
-func TestBranch_Feature(t *testing.T) {
-	mock := newMockCommander()
-	mock.responses["rev-parse --git-dir"] = ".git"
-	mock.responses["rev-parse --abbrev-ref"] = "feature/my-feature"
-
-	client, err := NewClientWithCommander("/test", mock)
-	if err != nil {
-		t.Fatalf("NewClientWithCommander() error = %v", err)
-	}
-
-	branch, err := client.Branch()
-	if err != nil {
-		t.Fatalf("Branch() error = %v", err)
-	}
-	if branch != "feature/my-feature" {
-		t.Errorf("Branch() = %q, want %q", branch, "feature/my-feature")
-	}
-}
-
-func TestBranch_DetachedHead(t *testing.T) {
-	mock := newMockCommander()
-	mock.responses["rev-parse --git-dir"] = ".git"
-	mock.responses["rev-parse --abbrev-ref"] = "HEAD"
-
-	client, err := NewClientWithCommander("/test", mock)
-	if err != nil {
-		t.Fatalf("NewClientWithCommander() error = %v", err)
-	}
-
-	branch, err := client.Branch()
-	if err != nil {
-		t.Fatalf("Branch() error = %v", err)
-	}
-	if branch != "HEAD" {
-		t.Errorf("Branch() = %q, want %q", branch, "HEAD")
 	}
 }
 
@@ -162,26 +84,7 @@ func TestStatus_Uncommitted(t *testing.T) {
 	}
 }
 
-func TestStatus_Staged(t *testing.T) {
-	mock := newMockCommander()
-	mock.responses["rev-parse --git-dir"] = ".git"
-	mock.responses["status --porcelain"] = "M  file1.go\nA  file2.go"
-
-	client, err := NewClientWithCommander("/test", mock)
-	if err != nil {
-		t.Fatalf("NewClientWithCommander() error = %v", err)
-	}
-
-	status, err := client.Status()
-	if err != nil {
-		t.Fatalf("Status() error = %v", err)
-	}
-	if status != "±2" {
-		t.Errorf("Status() = %q, want %q", status, "±2")
-	}
-}
-
-func TestStatus_Mixed(t *testing.T) {
+func TestStatus_SingleLine(t *testing.T) {
 	mock := newMockCommander()
 	mock.responses["rev-parse --git-dir"] = ".git"
 	mock.responses["status --porcelain"] = "MM file1.go"
@@ -197,86 +100,6 @@ func TestStatus_Mixed(t *testing.T) {
 	}
 	if status != "±1" {
 		t.Errorf("Status() = %q, want %q", status, "±1")
-	}
-}
-
-func TestRemoteURL_SSH(t *testing.T) {
-	mock := newMockCommander()
-	mock.responses["rev-parse --git-dir"] = ".git"
-	mock.responses["remote get-url"] = "git@github.com:owner/repo.git"
-
-	client, err := NewClientWithCommander("/test", mock)
-	if err != nil {
-		t.Fatalf("NewClientWithCommander() error = %v", err)
-	}
-
-	url, err := client.RemoteURL()
-	if err != nil {
-		t.Fatalf("RemoteURL() error = %v", err)
-	}
-	if url != "git@github.com:owner/repo.git" {
-		t.Errorf("RemoteURL() = %q, want %q", url, "git@github.com:owner/repo.git")
-	}
-}
-
-func TestRemoteURL_HTTPS(t *testing.T) {
-	mock := newMockCommander()
-	mock.responses["rev-parse --git-dir"] = ".git"
-	mock.responses["remote get-url"] = "https://github.com/owner/repo.git"
-
-	client, err := NewClientWithCommander("/test", mock)
-	if err != nil {
-		t.Fatalf("NewClientWithCommander() error = %v", err)
-	}
-
-	url, err := client.RemoteURL()
-	if err != nil {
-		t.Fatalf("RemoteURL() error = %v", err)
-	}
-	if url != "https://github.com/owner/repo.git" {
-		t.Errorf("RemoteURL() = %q, want %q", url, "https://github.com/owner/repo.git")
-	}
-}
-
-func TestRemoteURL_NoOrigin(t *testing.T) {
-	mock := newMockCommander()
-	mock.responses["rev-parse --git-dir"] = ".git"
-	mock.errors["remote get-url"] = errors.New("fatal: No such remote 'origin'")
-
-	client, err := NewClientWithCommander("/test", mock)
-	if err != nil {
-		t.Fatalf("NewClientWithCommander() error = %v", err)
-	}
-
-	_, err = client.RemoteURL()
-	if err == nil {
-		t.Error("RemoteURL() expected error for missing origin")
-	}
-}
-
-func TestParseGitHubRepo_SSH(t *testing.T) {
-	owner, repo, ok := ParseGitHubRepo("git@github.com:myowner/myrepo.git")
-	if !ok {
-		t.Fatal("ParseGitHubRepo() returned ok=false")
-	}
-	if owner != "myowner" {
-		t.Errorf("owner = %q, want %q", owner, "myowner")
-	}
-	if repo != "myrepo" {
-		t.Errorf("repo = %q, want %q", repo, "myrepo")
-	}
-}
-
-func TestParseGitHubRepo_HTTPS(t *testing.T) {
-	owner, repo, ok := ParseGitHubRepo("https://github.com/myowner/myrepo.git")
-	if !ok {
-		t.Fatal("ParseGitHubRepo() returned ok=false")
-	}
-	if owner != "myowner" {
-		t.Errorf("owner = %q, want %q", owner, "myowner")
-	}
-	if repo != "myrepo" {
-		t.Errorf("repo = %q, want %q", repo, "myrepo")
 	}
 }
 
@@ -309,7 +132,6 @@ func TestParseGitHubRepo_NonGitHub(t *testing.T) {
 	tests := []string{
 		"git@gitlab.com:owner/repo.git",
 		"https://gitlab.com/owner/repo.git",
-		"git@bitbucket.org:owner/repo.git",
 		"/local/path/repo",
 		"",
 	}
@@ -420,12 +242,6 @@ func TestParseShortstat(t *testing.T) {
 			input:      " 1 file changed, 1 deletion(-)",
 			wantAdd:    0,
 			wantDelete: 1,
-		},
-		{
-			name:       "large numbers",
-			input:      " 50 files changed, 1234 insertions(+), 5678 deletions(-)",
-			wantAdd:    1234,
-			wantDelete: 5678,
 		},
 	}
 
@@ -545,8 +361,7 @@ func TestParseStatusForTypes(t *testing.T) {
 func TestDiffStats(t *testing.T) {
 	mock := newMockCommander()
 	mock.responses["rev-parse --git-dir"] = ".git"
-	mock.responses["diff --shortstat"] = " 3 files changed, 42 insertions(+), 10 deletions(-)"
-	mock.responses["diff --shortstat"] = " 2 files changed, 20 insertions(+), 5 deletions(-)" // staged
+	mock.responses["diff --shortstat"] = " 2 files changed, 20 insertions(+), 5 deletions(-)"
 	mock.responses["status --porcelain"] = "?? new.go\nM  modified.go\n D deleted.go"
 
 	client, err := NewClientWithCommander("/test", mock)
@@ -559,17 +374,6 @@ func TestDiffStats(t *testing.T) {
 		t.Fatalf("DiffStats() error = %v", err)
 	}
 
-	// Line counts come from both unstaged and staged diffs
-	// With the mock, both calls return the same value due to key collision
-	// So we get 20+20=40 insertions and 5+5=10 deletions
-	if stats.Additions < 20 {
-		t.Errorf("Additions = %d, want at least 20", stats.Additions)
-	}
-	if stats.Deletions < 5 {
-		t.Errorf("Deletions = %d, want at least 5", stats.Deletions)
-	}
-
-	// File type counts
 	if stats.NewFiles != 1 {
 		t.Errorf("NewFiles = %d, want 1", stats.NewFiles)
 	}

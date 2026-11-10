@@ -73,11 +73,6 @@ func NewClientWithCommander(workDir string, cmd Commander) (*Client, error) {
 	}, nil
 }
 
-// GitDir returns the path to the .git directory.
-func (c *Client) GitDir() string {
-	return c.gitDir
-}
-
 // Branch returns the current branch name.
 // Returns "HEAD" for detached HEAD state.
 func (c *Client) Branch() (string, error) {

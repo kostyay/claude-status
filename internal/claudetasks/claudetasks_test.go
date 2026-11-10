@@ -22,6 +22,7 @@ func TestClient_Available_NoDir(t *testing.T) {
 }
 
 func TestClient_Available_EmptySessionID(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_TASK_LIST_ID", "")
 	c := NewClient("")
 	if c.Available() {
 		t.Error("Available() = true, want false for empty sessionID")

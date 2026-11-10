@@ -575,13 +575,3 @@ func getPackedRefsMtime(refPath string) (int64, error) {
 	packedRefs := filepath.Join(gitDir, "packed-refs")
 	return getFileMtime(packedRefs)
 }
-
-// Clear removes all cached data.
-func (m *Manager) Clear() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	// Invalidate in-memory cache
-	m.memCache = nil
-	m.cacheLoaded = false
-	return os.Remove(m.cachePath)
-}

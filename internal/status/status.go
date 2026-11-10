@@ -154,7 +154,6 @@ type GitProvider interface {
 	Status() (string, error)
 	DiffStats() (git.DiffStats, error)
 	RemoteURL() (string, error)
-	GitDir() string
 	HeadPath() string
 	IndexPath() string
 	RefPath(branch string) string
@@ -173,7 +172,6 @@ type CacheProvider interface {
 	GetGitHubBuild(refPath, branch string, ttl time.Duration, fetchFn func() (github.BuildStatus, error)) (github.BuildStatus, error)
 	GetTaskStats(workDir string, ttl time.Duration, fetchFn func() (tasks.Stats, error)) (tasks.Stats, error)
 	GetNextTask(workDir string, ttl time.Duration, fetchFn func() (string, error)) (string, error)
-	EnsureDir() error
 }
 
 // Builder constructs StatusData from various sources.
@@ -415,14 +413,9 @@ func (b *Builder) contextWindow(input Input, contextLength int64) int64 {
 
 // populateFromTranscript parses the transcript JSONL file for token metrics.
 func (b *Builder) populateFromTranscript(data *template.StatusData, input Input) tokens.Metrics {
-	var metrics tokens.Metrics
-	if input.TranscriptPath != "" {
-		var err error
-		metrics, err = tokens.ParseTranscript(input.TranscriptPath)
-		if err != nil {
-			slog.Debug("failed to parse transcript", "path", input.TranscriptPath, "err", err)
-			metrics = tokens.Metrics{}
-		}
+	metrics, err := tokens.ParseTranscript(input.TranscriptPath)
+	if err != nil {
+		slog.Debug("failed to parse transcript", "path", input.TranscriptPath, "err", err)
 	}
 
 	data.ContextWindowSize = b.contextWindow(input, metrics.ContextLength)
@@ -486,11 +479,6 @@ func (b *Builder) fetchGitHubStatus(data *template.StatusData, branch string) {
 	}
 
 	data.GitHubStatus = github.StatusToEmoji(buildStatus)
-}
-
-// SetGitHubClient sets the GitHub client (for lazy initialization or testing).
-func (b *Builder) SetGitHubClient(gh GitHubProvider) {
-	b.gh = gh
 }
 
 // SetPricingProvider overrides the pricing provider used for cost fallback.

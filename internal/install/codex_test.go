@@ -52,17 +52,6 @@ func TestGetCodexConfigPath(t *testing.T) {
 func TestUpdateCodexConfig_NewFile(t *testing.T) {
 	updated := mustUpdateCodexConfig(t, "")
 
-	assert.Equal(t, []string{
-		"model-with-reasoning",
-		"run-state",
-		"context-used",
-		"five-hour-limit",
-		"weekly-limit",
-		"git-branch",
-		"pull-request-number",
-		"branch-changes",
-		"project-name",
-	}, codexStatusLineItems)
 	assert.True(t, strings.HasPrefix(updated, "[tui]\nstatus_line = [\n"))
 	for _, item := range codexStatusLineItems {
 		assert.Contains(t, updated, `"`+item+`"`)

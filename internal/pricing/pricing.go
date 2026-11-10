@@ -65,14 +65,6 @@ type Provider interface {
 	Lookup(modelID string) (Price, bool)
 }
 
-type Static struct{ table Table }
-
-func NewStatic(t Table) *Static { return &Static{table: t} }
-
-func (s *Static) Lookup(modelID string) (Price, bool) {
-	return s.table.Lookup(modelID)
-}
-
 func (t Table) Lookup(modelID string) (Price, bool) {
 	if t == nil {
 		return Price{}, false
