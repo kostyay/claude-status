@@ -465,3 +465,43 @@ func TestIntegration_RealGitRepo(t *testing.T) {
 		t.Error("IndexPath() should be absolute")
 	}
 }
+
+func TestDiffStats_RealRepoUnstagedModification(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	git := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init")
+	git("config", "user.email", "test@test.com")
+	git("config", "user.name", "Test")
+	git("config", "commit.gpgsign", "false")
+	file := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(file, []byte("one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".")
+	git("commit", "-m", "initial")
+	// Porcelain line " M a.txt": the leading space marks the change as unstaged.
+	if err := os.WriteFile(file, []byte("two\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	client, err := NewClient(dir)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	stats, err := client.DiffStats()
+	if err != nil {
+		t.Fatalf("DiffStats() error = %v", err)
+	}
+	if stats.ModifiedFiles != 1 || stats.UnstagedFiles != 1 {
+		t.Errorf("DiffStats() = %+v, want 1 modified and 1 unstaged", stats)
+	}
+}

@@ -25,7 +25,7 @@ func (e *ExecCommander) Run(ctx context.Context, dir string, args ...string) (st
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimRight(string(out), "\r\n"), nil
 }
 
 // DiffStats holds git diff statistics.
