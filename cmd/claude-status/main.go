@@ -78,7 +78,7 @@ func run() error {
 			return fmt.Errorf("failed to get current directory: %w", err)
 		}
 		input = status.Input{
-			Model:     status.ModelInfo{ID: "claude-sonnet-4-20250514", DisplayName: "Sonnet 4"},
+			Model:     status.ModelInfo{ID: "claude-sonnet-5-5", DisplayName: "Sonnet 5.5"},
 			Workspace: status.WorkspaceInfo{CurrentDir: cwd},
 			Version:   "test",
 		}
@@ -119,18 +119,7 @@ func run() error {
 
 	data := builder.Build(input)
 
-	// Render template
-	engine, err := template.NewEngine(cfg.Template)
-	if err != nil {
-		// Log the template error and fall back to default
-		slog.Warn("invalid template, using default", "err", err)
-		engine, err = template.NewEngine(config.DefaultTemplate)
-		if err != nil {
-			return fmt.Errorf("failed to create template engine: %w", err)
-		}
-	}
-
-	output, err := engine.Render(data)
+	output, err := render(cfg.Template, data)
 	if err != nil {
 		return fmt.Errorf("failed to render template: %w", err)
 	}
@@ -144,6 +133,25 @@ func run() error {
 	}
 
 	return nil
+}
+
+// render executes tmpl, falling back to the default template when tmpl fails to
+// parse or execute (e.g. it references a field that no longer exists).
+func render(tmpl string, data template.StatusData) (string, error) {
+	output, err := renderWith(tmpl, data)
+	if err == nil || tmpl == config.DefaultTemplate {
+		return output, err
+	}
+	slog.Warn("invalid template, using default", "err", err)
+	return renderWith(config.DefaultTemplate, data)
+}
+
+func renderWith(tmpl string, data template.StatusData) (string, error) {
+	engine, err := template.NewEngine(tmpl)
+	if err != nil {
+		return "", err
+	}
+	return engine.Render(data)
 }
 
 // LogEntry represents a log entry in the status line log.

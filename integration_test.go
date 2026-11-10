@@ -353,6 +353,41 @@ func TestE2E_DefaultTemplateEffort(t *testing.T) {
 	}
 }
 
+func TestE2E_StdinSchema(t *testing.T) {
+	input := `{
+		"model": {"id": "claude-opus-5-5", "display_name": "Opus"},
+		"workspace": {"current_dir": "/tmp/proj"},
+		"context_window": {"used_percentage": 60, "context_window_size": 1000000},
+		"fast_mode": true,
+		"pr": {"number": 7, "url": "https://gitlab.com/g/p/-/merge_requests/7", "kind": "mr"}
+	}`
+	var parsed status.Input
+	if err := json.Unmarshal([]byte(input), &parsed); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	cfg := config.Default()
+	data := status.NewBuilderWithDeps(&cfg, nil, nil, nil, nil, "").Build(parsed)
+	if !data.FastMode {
+		t.Error("FastMode = false, want true")
+	}
+	if data.PRKind != "mr" {
+		t.Errorf("PRKind = %q, want %q", data.PRKind, "mr")
+	}
+
+	engine, err := template.NewEngine(cfg.Template)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	output, err := engine.Render(data)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if !strings.Contains(output, "📊 60.0%") {
+		t.Errorf("output %q should show Claude Code's used_percentage as-is", output)
+	}
+}
+
 func TestE2E_GracefulDegradation(t *testing.T) {
 	tmpDir := t.TempDir()
 	cacheDir := filepath.Join(tmpDir, "cache")
@@ -491,14 +526,14 @@ func TestE2E_TasksWidget(t *testing.T) {
 	}
 
 	data := template.StatusData{
-		Model:         "Claude",
-		Dir:           "myproject",
-		GitBranch:     "main",
-		TaskProvider:  "kt",
-		HasTasks:      true,
-		TasksReady:    3,
-		TasksBlocked:  1,
-		ContextPctUse: 45.2,
+		Model:        "Claude",
+		Dir:          "myproject",
+		GitBranch:    "main",
+		TaskProvider: "kt",
+		HasTasks:     true,
+		TasksReady:   3,
+		TasksBlocked: 1,
+		ContextPct:   45.2,
 	}
 
 	output, err := engine.Render(data)
@@ -557,4 +592,3 @@ func TestE2E_TasksCache(t *testing.T) {
 		t.Errorf("fetchCalls = %d, want 1 (should use cache)", fetchCalls)
 	}
 }
-

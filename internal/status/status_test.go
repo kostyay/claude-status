@@ -683,7 +683,6 @@ func TestBuild_ContextWindowFromStdin(t *testing.T) {
 		name          string
 		contextWindow *ContextWindowInfo
 		wantPct       float64
-		wantPctUse    float64
 		wantInput     int64
 		wantOutput    int64
 		wantCached    int64
@@ -705,7 +704,6 @@ func TestBuild_ContextWindowFromStdin(t *testing.T) {
 				},
 			},
 			wantPct:     14.1,
-			wantPctUse:  17.625, // 14.1 * 1.25
 			wantInput:   8500,
 			wantOutput:  1200,
 			wantCached:  7000, // 5000 + 2000
@@ -718,7 +716,6 @@ func TestBuild_ContextWindowFromStdin(t *testing.T) {
 				ContextWindowSize: 200_000,
 			},
 			wantPct:     50.0,
-			wantPctUse:  62.5, // 50 * 1.25
 			wantCtxSize: 200_000,
 		},
 		{
@@ -729,17 +726,15 @@ func TestBuild_ContextWindowFromStdin(t *testing.T) {
 				CurrentUsage:      nil,
 			},
 			wantPct:     8.0,
-			wantPctUse:  10.0, // 8 * 1.25
 			wantCtxSize: 200_000,
 		},
 		{
-			name: "high usage caps usable at 100",
+			name: "high usage passes through",
 			contextWindow: &ContextWindowInfo{
 				UsedPercentage:    ptrFloat64(90.0),
 				ContextWindowSize: 200_000,
 			},
 			wantPct:     90.0,
-			wantPctUse:  100.0, // 90 * 1.25 = 112.5, capped at 100
 			wantCtxSize: 200_000,
 		},
 	}
@@ -760,9 +755,6 @@ func TestBuild_ContextWindowFromStdin(t *testing.T) {
 
 			if data.ContextPct != tt.wantPct {
 				t.Errorf("ContextPct = %v, want %v", data.ContextPct, tt.wantPct)
-			}
-			if data.ContextPctUse != tt.wantPctUse {
-				t.Errorf("ContextPctUse = %v, want %v", data.ContextPctUse, tt.wantPctUse)
 			}
 			if data.TokensInput != tt.wantInput {
 				t.Errorf("TokensInput = %d, want %d", data.TokensInput, tt.wantInput)
