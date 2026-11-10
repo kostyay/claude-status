@@ -243,12 +243,14 @@ Create `~/.config/claude-status/config.json`:
 The default template shows a complete status line with prefix support, git diff stats, clickable PR link, and a second line for task tracking (if a task tracker is configured):
 
 ```
-{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .PRNumber}} | {{magenta}}{{link .PRURL (printf "%s #%d" (prEmoji .PRReviewState) .PRNumber)}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .TasksReady}}
+{{if .Prefix}}{{.PrefixColor}}{{.Prefix}}{{reset}} | {{end}}{{cyan}}[{{.Model}}{{if .EffortLevel}} 🧠 {{.EffortLevel}}{{end}}]{{reset}} | {{blue}}📁 {{.Dir}}{{reset}}{{if .GitBranch}} | {{green}}🌿 {{.GitBranch}}{{if .GitStatus}} {{.GitStatus}}{{end}}{{reset}}{{if or .GitAdditions .GitDeletions}} {{green}}{{fmtSigned .GitAdditions}}{{reset}},{{red}}-{{.GitDeletions}}{{reset}}{{end}}{{if or .GitNewFiles .GitModifiedFiles .GitDeletedFiles .GitUnstagedFiles}}{{if .GitNewFiles}} ✨{{.GitNewFiles}}{{end}}{{if .GitModifiedFiles}} 📝{{.GitModifiedFiles}}{{end}}{{if .GitDeletedFiles}} 🗑{{.GitDeletedFiles}}{{end}}{{if .GitUnstagedFiles}} ⚡{{.GitUnstagedFiles}}{{end}}{{end}}{{end}}{{if .GitHubStatus}} | {{.GitHubStatus}}{{end}}{{if .PRNumber}} | {{magenta}}{{link .PRURL (printf "%s #%d" (prEmoji .PRReviewState) .PRNumber)}}{{reset}}{{end}}{{if .ContextPctUse}} | {{ctxColor .ContextPctUse}}📊 {{fmtPct .ContextPctUse}}{{reset}}{{end}}{{if .CostUSD}} | {{yellow}}💰 {{fmtCost .CostUSD}}{{reset}}{{end}}{{if .Version}} | {{gray}}v{{.Version}}{{reset}}{{end}}{{if .TasksReady}}
 {{yellow}}📋 {{.TaskProvider}}: {{.TasksReady}} ready{{reset}}{{if .TasksBlocked}}, {{red}}{{.TasksBlocked}} blocked{{reset}}{{end}}{{if .TasksNextTask}}. Next Up: {{.TasksNextTask}}{{end}}{{end}}
 ```
 
 Features:
 - **Prefix** - Optional profile identifier (via `--prefix` flag)
+- **Effort** - Reasoning effort next to the model (`🧠 high`), when the model supports it
+- **Session cost** - Total USD from Claude Code (models.dev pricing fallback)
 - **Context percentage** - Color-coded (green/yellow/red) based on usage
 - **Git diff stats** - Shows additions, deletions, and file changes
 - **Pull request** - Clickable PR number with review-state emoji

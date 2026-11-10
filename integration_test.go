@@ -328,6 +328,31 @@ func TestE2E_StdoutOutput(t *testing.T) {
 	}
 }
 
+func TestE2E_DefaultTemplateEffort(t *testing.T) {
+	engine, err := template.NewEngine(config.Default().Template)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	tests := []struct {
+		effort string
+		want   string
+	}{
+		{effort: "xhigh", want: "[Opus 5.5 🧠 xhigh]"},
+		{effort: "", want: "[Opus 5.5]"},
+	}
+	for _, tt := range tests {
+		data := template.StatusData{Model: "Opus 5.5", Dir: "p", EffortLevel: tt.effort}
+		output, err := engine.Render(data)
+		if err != nil {
+			t.Fatalf("Render() error = %v", err)
+		}
+		if !strings.Contains(output, tt.want) {
+			t.Errorf("effort %q: output %q missing %q", tt.effort, output, tt.want)
+		}
+	}
+}
+
 func TestE2E_GracefulDegradation(t *testing.T) {
 	tmpDir := t.TempDir()
 	cacheDir := filepath.Join(tmpDir, "cache")
