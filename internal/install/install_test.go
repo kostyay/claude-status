@@ -3,6 +3,7 @@ package install
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -247,6 +248,25 @@ func TestRun_Integration_Confirm(t *testing.T) {
 	statusLine := settings["statusLine"].(map[string]any)
 	assert.Equal(t, "command", statusLine["type"])
 	assert.Equal(t, float64(0), statusLine["padding"])
+}
+
+func TestRun_Integration_AlreadyInstalled(t *testing.T) {
+	tmpDir := t.TempDir()
+	settingsPath := filepath.Join(tmpDir, "settings.json")
+	t.Setenv("CLAUDE_CONFIG_DIR", tmpDir)
+	require.NoError(t, os.WriteFile(settingsPath, []byte(`{"theme": "dark"}`), 0644))
+	require.NoError(t, RunTarget(io.Discard, strings.NewReader("y\n"), TargetClaude))
+	installed, err := os.ReadFile(settingsPath)
+	require.NoError(t, err)
+
+	var output bytes.Buffer
+	require.NoError(t, RunTarget(&output, strings.NewReader(""), TargetClaude))
+
+	assert.Contains(t, output.String(), "No changes needed")
+	assert.NotContains(t, output.String(), "Apply changes?")
+	after, err := os.ReadFile(settingsPath)
+	require.NoError(t, err)
+	assert.Equal(t, installed, after)
 }
 
 func TestRun_Integration_Cancel(t *testing.T) {
